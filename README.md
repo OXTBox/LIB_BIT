@@ -30,8 +30,8 @@ LIB_MCP's standalone (needs `~/projects/LIB_MCP`). All pass.
 
 ## Where it came from, and what is next
 
-Made pure from the owner's GridDraw animator (`~/projects/GridDrawAnimation`) and bitmap
-tracer (`~/projects/bitmap_trace_animate`), which keep these operations on globals and
+Made pure from the owner's GridDraw animator (`~/projects/xtalk_py/corpus/originals/GridDraw_Animation_Stack_10272026.txt`) and bitmap
+tracer (`~/projects/xtalk_py/corpus/originals/BITMAPVECTORTRACER_Livecode_Stack_Script.txt`), which keep these operations on globals and
 redraw the screen as they go. Still to bring over: BitFontMaker2 JSON import/export of a
 whole font, actors > animations > frames, undo, and drawing a grid into an xt3d texture.
 Outline tracing is a separate library, LIB_TRACE.
