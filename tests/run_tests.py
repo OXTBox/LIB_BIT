@@ -38,6 +38,13 @@ TESTS = [
     # a real BitFontMaker2 glyph row ("97":[...,496,...]): columns 5-9 filled
     ('Bit.FromRows("496", 16)', '0000111110000000'),
     ('Bit.ToRows(Bit.FromRows("0,496,280,256,992", 16))', '0,496,280,256,992'),
+    # Bit.Maze: the exact grid is also produced by the Python twin (same Park-Miller numbers)
+    ('Bit.Maze(4, 3, 42)', '111111111\n100010001\n111010101\n100010101\n101111101\n100000001\n111111111'),
+    ('Bit.Width(Bit.Maze(6, 5, 3)) & "," & Bit.Height(Bit.Maze(6, 5, 3))', '13,11'),
+    # a perfect maze: every room open plus one passage fewer than rooms (2*30-1 open cells)
+    ('Bit.Count(Bit.Invert(Bit.Maze(6, 5, 3)))', '59'),
+    ('Bit.Maze(6, 5, 3) is Bit.Maze(6, 5, 3)', 'true'),
+    ('Bit.Maze(6, 5, 3) is Bit.Maze(6, 5, 4)', 'false'),
 ]
 
 

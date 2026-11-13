@@ -22,10 +22,11 @@ set the text of image "sprite" to Bit.ToPBM(tGrid)      -- LiveCode displays PBM
 | `Bit.FromLongString(text, width)` | one long string of bits -> rows |
 | `Bit.ToPBM`, `Bit.FromPBM` | PBM text (P1), which LiveCode images show directly |
 | `Bit.ToRows`, `Bit.FromRows(rows [, width])` | BitFontMaker2 rows: one number per row, column 1 = 1, column 2 = 2, column 3 = 4 ... |
+| `Bit.Maze(cols [, rows [, seed]])` | a perfect maze of cols x rows rooms as a (2c+1) x (2r+1) grid, `1` wall. Seeded with its own Park-Miller numbers, so a seed gives the same maze in every engine (and in Python) |
 
 ## Tests
 
-`python3 tests/run_tests.py` runs 23 checks inside real LiveCode 9.6.3 through
+`python3 tests/run_tests.py` runs 28 checks inside real LiveCode 9.6.3 through
 LIB_MCP's standalone (needs `~/projects/LIB_MCP`). All pass.
 
 ## Where it came from, and what is next
