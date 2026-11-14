@@ -1,0 +1,25 @@
+if "lib_cellmap" is among the lines of the openStacks or there is a stack "lib_cellmap" then
+  stop using stack "lib_cellmap"
+  delete stack "lib_cellmap"
+end if
+start using stack "//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/livecode/lib_cellmap.livecodescript"
+put CellMap.ReadText("//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/maps/amazing_couple.cellmap") into tA
+put CellMap.Read("//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/maps/amazing_couple.cellmap") into tMap
+put "map round trip: " & (CellMap.ToText(tMap) is tA) & return into tLog
+put "design 2,1 and 7,1: " & CellMap.Get(tMap,"design",2,1) && CellMap.Get(tMap,"design",7,1) & "  tag at 2,2: " & CellMap.Get(tMap,"tags",2,2) & "  height 1,1: " & CellMap.Get(tMap,"heights",1,1) & return after tLog
+repeat for each item tF in "Base_001,24_Seniors_Sigils"
+  put CellMap.ReadText("//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/fonts/" & tF & ".font.txt") into tT
+  put CellMap.FontFromText(tT) into tFont
+  put tF & " font round trip: " & (CellMap.FontToText(tFont) is tT) & return after tLog
+end repeat
+put CellMap.TagsFromText(CellMap.ReadText("//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/data/tags_default.txt")) into tTags
+put "tags: " & the number of lines of the keys of tTags && "codes; 35 = " & tTags[35]["name"] && tTags[35]["colour"] & "; @ = " & CellMap.TagInfo(tMap, tTags, "@", "name") & return after tLog
+put CellMap.Glyph(tFont, 65) into tG
+put "glyph rows back: " & (CellMap.GlyphToRows(tG) is tFont[65]) & return after tLog
+put CellMap.New(4,3,"t") into tN
+CellMap.Set tN, "design", 2, 2, 200
+CellMap.Set tN, "design", 3, 2, 7
+put CellMap.ToText(tN) into tH
+put "hex back: " & (CellMap.ToText(CellMap.FromText(tH)) is tH) & return after tLog
+put tH & return & tG & return after tLog
+return tLog
