@@ -30,7 +30,7 @@ TESTS = [
     ('Bit.Rotate(%s, -90)' % G, '001\n100\n100\n010'),
     ('Bit.Rotate(Bit.Rotate(%s, 90), -90) is (%s)' % (G, G), 'true'),
     ('Bit.Pad("11" & return & "11", 4)', '0000\n0110\n0110\n0000'),
-    ('Bit.ToPBM(%s)' % G, 'P1\n4 3\n0110\n1000\n0001\n'),
+    ('Bit.ToPBM(%s)' % G, 'P1\n4 3\n0 1 1 0 \n1 0 0 0 \n0 0 0 1 \n'),
     ('Bit.FromPBM("P1" & return & "# comment" & return & "4 3" & return & "0 1 1 0 1 0 0 0 0 0 0 1")', '0110\n1000\n0001'),
     ('Bit.FromPBM(Bit.ToPBM(%s)) is (%s)' % (G, G), 'true'),
     ('Bit.ToRows(%s)' % G, '6,1,8'),
