@@ -1,0 +1,59 @@
+if "lib_cellmap" is among the lines of the openStacks or there is a stack "lib_cellmap" then
+  stop using stack "lib_cellmap"
+  delete stack "lib_cellmap"
+end if
+put "//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/" into tDir
+start using stack (tDir & "livecode/lib_cellmap.livecodescript")
+put empty into tLog
+repeat for each item tName in "amazing_couple,wizard_pool"
+  put CellMap.ReadText(tDir & "maps/" & tName & ".cellmap") into tA
+  put tName & " round trip: " & (CellMap.ToText(CellMap.FromText(tA)) is tA) & return after tLog
+end repeat
+put CellMap.Read(tDir & "maps/amazing_couple.cellmap") into tV1
+put "v1 stays v1: " & (tV1["meta"]["version"] is 1 and tV1["floor"] is not an array) & return after tLog
+put CellMap.Get(tV1, "heights", 2, 4) into tOld
+CellMap.Upgrade tV1
+put "upgrade same as Python's file: " & (CellMap.ToText(tV1) is CellMap.ReadText(tDir & "tests/_py_upgraded.cellmap")) & return after tLog
+put "old heights through Get: " & (CellMap.Get(tV1, "heights", 2, 4) is tOld and CellMap.Get(tV1, "heights", 1, 1) is 9) & return after tLog
+CellMap.Set tV1, "heights", 2, 2, 3
+put "Set heights 3 -> floor 33: " & (tV1["floor"][2][2] is 33) & return after tLog
+put CellMap.Read(tDir & "maps/wizard_pool.cellmap") into tMap
+put CellMap.TagsFromText(CellMap.ReadText(tDir & "data/tags_default.txt")) into tTags
+put CellMap.FontFromText(CellMap.ReadText(tDir & "fonts/Aquarius.font.txt")) into tFont
+put "links, objects: " & tMap["links"][1]["type"] && tMap["links"][1]["to"] && tMap["objects"][1]["kind"] & return after tLog
+put CellMap.Levels(tMap, 20, 5) into tL
+replace return with " / " in tL
+put "levels tower room: " & tL & return after tLog
+put the milliseconds into tT
+put CellMap.LevelSegments(tMap, tTags, tFont) into tSegs
+put "segments: " & the number of lines of tSegs & " in " & (the milliseconds - tT) & " ms" & return after tLog
+put CellMap.ReadText(tDir & "tests/_py_segments.txt") into tPy
+if the last char of tPy is return then delete the last char of tPy
+sort lines of tPy
+put "segments same as Python's: " & (tSegs is tPy) & return after tLog
+put "one in engine units: " & CellMap.SegToEngine(tMap, line 1 of tSegs) & return after tLog
+put CellMap.HU(tMap) into k
+put empty into tWalks
+put the milliseconds into tT
+put 0 into tSteps
+repeat for each line tRun in "pool,12,13,-4,0,100,1" & return & "poolout,7,13,4,0,100,-59" & return & "dais,12,13,4,0,57,1" & return & "wall,22,10,4,0,60,1" & return & \
+    "towerwall,21,9,0,-4,80,1" & return & "door,20,9,0,-4,80,1" & return & "cloud,15,4,0,0,1,231" & return & "cloudoff,15,4,0,4,40,231" & return & "maze,2,6,4,0,200,1"
+  put CellMap.CellX(tMap, item 2 of tRun) into x
+  put CellMap.CellZ(tMap, item 3 of tRun) into z
+  put item 7 of tRun * k into y
+  put empty into e
+  repeat item 6 of tRun times
+    put CellMap.Walk(tMap, tTags, tFont, x, z, y, item 4 of tRun, item 5 of tRun) into tW
+    put item 1 of tW into x
+    put item 2 of tW into z
+    put item 3 of tW into y
+    put item 4 of tW into e
+    add 1 to tSteps
+  end repeat
+  put item 1 of tRun & "|" & CellMap.CellAt(tMap, x, z) & "|" & format("%.2f", y / k) & "|" & e & return after tWalks
+end repeat
+put "walk: " & tSteps & " steps, " & format("%.2f", (the milliseconds - tT) / tSteps) & " ms a step" & return after tLog
+put CellMap.ReadText(tDir & "tests/_py_walk.txt") into tPy
+put "walks same as Python's: " & (tWalks is tPy) & return after tLog
+if tWalks is not tPy then put tWalks after tLog
+return tLog
