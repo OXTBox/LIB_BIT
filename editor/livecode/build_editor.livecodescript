@@ -6,24 +6,22 @@ script "build_editor"
 ## The stack script is editor_stack.livecodescript; edit that, then build again.
 ######################################################################################
 
-constant kBG = "30,30,34"
-constant kPanel = "42,42,48"
-constant kText = "220,220,224"
 
 command Build.Editor pDir
    local tS, tPath, r, c, x, tMenu, tMenus, tItems
    put "BitEditor" into tS
    if there is a stack tS then delete stack tS
-   reset the templateStack
+   -- LIB_THEME: one look for every stack (owner, 11 14 2026); templates reset before and after
+   Build.UseTheme pDir
+   Theme.Begin
    create invisible stack tS
    set the rect of stack tS to 120, 80, 120 + 1140, 80 + 660
    set the title of stack tS to "FOR BILL BitEditor"   -- "Opus BitEditor" while an AI drives it (title rule)
-   set the backgroundColor of stack tS to kBG
-   set the foregroundColor of stack tS to kText
    set the textSize of stack tS to 12
    set the resizable of stack tS to false
    set the defaultStack to tS
    set the script of card 1 of stack tS to Build.CardScript()
+   Theme.MenuBar tS, 0, 0, 1140, 30          -- menus sit on a light strip (the menu rule)
    -- menu bar: more menus than tabs (owner's note)
    put "File" & tab & "New Map...|Open Map...|-|Save Map|Save Map As...|-|Save Font|Export Tags As Text" & return & \
          "Bit" & tab & "Flip Horizontal|Flip Vertical|Rotate 90 cw|Rotate 90 ccw|-|Shift Left|Shift Right|Shift Up|Shift Down|-|Invert|Clear|Fill" & return & \
@@ -41,7 +39,6 @@ command Build.Editor pDir
       replace "|" with return in tItems
       set the text of it to tItems
       set the rect of it to x, 4, x + 64, 26
-      Build.Dark it
       add 66 to x
    end repeat
    set the itemDel to comma
@@ -50,12 +47,10 @@ command Build.Editor pDir
    set the rect of it to 8, 34, 56, 56
    put "Filter:" into field "FilterLabel"
    set the lockText of it to true
-   Build.Dark it
    set the opaque of it to false
    create field "Filter"
    set the rect of it to 58, 34, 230, 56
    set the script of it to "on textChanged" & return & "Ed.FillList" & return & "end textChanged"
-   Build.Dark it
    create field "Codes"
    set the rect of it to 8, 62, 230, 620
    set the listBehavior of it to true
@@ -64,12 +59,11 @@ command Build.Editor pDir
    set the vScrollbar of it to true
    set the textFont of it to "Courier New"
    set the script of it to "on mouseUp" & return & "Ed.ListClicked" & return & "end mouseUp"
-   Build.Dark it
    -- middle: the drawing board (16 x 16), the selected code, the quick functions
    reset the templateGraphic
    set the style of the templateGraphic to "rectangle"
    set the filled of the templateGraphic to true
-   set the foregroundColor of the templateGraphic to kBG
+   set the foregroundColor of the templateGraphic to Theme.Get("bg")
    set the lineSize of the templateGraphic to 1
    put 1 into r
    repeat while r <= 16
@@ -87,7 +81,6 @@ command Build.Editor pDir
    create field "Info"
    set the rect of it to 278, 328, 530, 396
    set the lockText of it to true
-   Build.Dark it
    create field "Quick"
    set the rect of it to 242, 404, 530, 620
    set the listBehavior of it to true
@@ -96,29 +89,29 @@ command Build.Editor pDir
    replace "|" with return in tItems
    put tItems into field "Quick"
    set the script of it to "on mouseUp" & return & "Ed.GlyphDo the value of the clickLine" & return & "end mouseUp"
-   Build.Dark it
    -- right: the viewport tabs and the map
    create button "ViewTabs"
    set the style of it to "menu"
    set the menuMode of it to "tabbed"
    set the text of it to "1bit" & return & "Vibe" & return & "xt3D"
    set the rect of it to 540, 30, 1132, 622
-   Build.Dark it
    create graphic "MapFrame"
    set the style of it to "rectangle"
    set the filled of it to true
-   set the backgroundColor of it to kPanel
-   set the foregroundColor of it to kPanel
+   set the backgroundColor of it to Theme.Get("panel")
+   set the foregroundColor of it to Theme.Get("panel")
    set the rect of it to 548, 60, 1124, 614
    create field "NotYet"
    set the rect of it to 560, 80, 1112, 220
    set the lockText of it to true
    set the visible of it to false
-   Build.Dark it
    create field "Status"
    set the rect of it to 8, 628, 1132, 652
    set the lockText of it to true
-   Build.Dark it
+   -- one look for everything (fields, buttons, menus by the menu rule), then templates reset
+   Theme.ApplyStack tS
+   set the opaque of field "FilterLabel" of stack tS to false
+   Theme.End
    -- the behaviour, then save next to the data
    set the script of stack tS to Build.ReadText(pDir & "/livecode/editor_stack.livecodescript")
    put pDir & "/BitEditor.livecode" into tPath
@@ -127,14 +120,17 @@ command Build.Editor pDir
    return tPath
 end Build.Editor
 
-command Build.Dark pObj
-   set the backgroundColor of pObj to kPanel
-   set the foregroundColor of pObj to kText
-   set the borderColor of pObj to "70,70,80"
-   set the threeD of pObj to false
-   set the showFocusBorder of pObj to false
-   if word 1 of pObj is "field" then set the showBorder of pObj to false
-end Build.Dark
+command Build.UseTheme pDir
+   local tLib
+   set the itemDel to "/"
+   put item 1 to -3 of pDir & "/LIB_THEME/livecode/lib_theme.livecodescript" into tLib
+   if there is not a file tLib then
+      answer "LIB_THEME not found: " & tLib
+      exit to top
+   end if
+   start using stack tLib
+   Theme.Use "dark"
+end Build.UseTheme
 
 function Build.CardScript
    return "on mouseDown pButton" & return & \
