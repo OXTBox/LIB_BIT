@@ -1,2 +1,3 @@
 tests/_*
 *.check
+maps/*_e0*.cellmap
