@@ -53,3 +53,15 @@ drawing board and centres the 3D camera on it, keeping the camera's height.
    tabs only for the viewport (1bit / Vibe / xt3D)? Default: yes.
 5. Where does it live: a stack in LIB_BIT, or a Vibecode3D editor card like the iGame3D UI
    remake (`Play.Ig3dEditor`)? Default: an editor card in Vibecode3D, LIB_BIT doing the data.
+
+## The owner's answers (14 Nov) and what was built (`editor/`)
+1. The drawing board is 1-bit; the MAP holds a byte (0-255) a cell: "CLAUDE" in six cells =
+   cells built from the glyphs drawn for C, L, A, U, D, E in the map's font. Units and grid
+   follow the grid settings, starting from Amazing Couple's defaults (13 x 13, cell 76, wall 58).
+2. Extrude = a block's height (a step, a block or a full wall). Ceilings and roofed hallways later.
+3. Tags: a roguelike ASCII layer of letters, 256 basic elements as far as sensible keys go, room
+   for custom ones; each tag has a colour (data, cycling R G B Y M C, never two alike side by side)
+   and an **effect**: what the cell does to an actor (block, open, damage, heal, teleport ...).
+4. Everything goes into one keyed array that is also a plain text file (`.cellmap`), the same
+   from LiveCode and Python. Animated characters will read it.
+5. It lives in `LIB_BIT/editor`, apart from the Vibecode3D and xt3d main stacks for now.

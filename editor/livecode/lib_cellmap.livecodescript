@@ -9,9 +9,10 @@ script "lib_cellmap"
 ##   tMap["design"][row][col]    0-255: which glyph of the map's font builds the cell
 ##   tMap["tags"][row][col]      one character: what the cell is (# wall, + door, ^ trap ...)
 ##   tMap["heights"][row][col]   0-35: extrusion, 9 = a full wall (wallH)
-##   tMap["tagdefs"][char][name|colour|solid|height]   this map's own tags (optional)
+##   tMap["tagdefs"][char][name|colour|solid|height|effect]   this map's own tags (optional)
+##   effect = what the cell does when an actor touches or enters it (block, open, damage, heal ...)
 ##   rows and columns count from 1.
-## Tag table (data/tags_default.txt): CellMap.TagsFromText -> [code][char|name|colour|solid|height|group]
+## Tag table (data/tags_default.txt): CellMap.TagsFromText -> [code][char|name|colour|solid|height|group|effect]
 ## Font (fonts/*.font.txt): CellMap.FontFromText -> [code] = 16 row numbers; CellMap.Glyph -> 0/1 rows
 ######################################################################################
 
@@ -139,6 +140,8 @@ function CellMap.FromText pText
             put item 3 of tLine into tMap["tagdefs"][tKey]["colour"]
             put item 4 of tLine into tMap["tagdefs"][tKey]["solid"]
             put item 5 of tLine into tMap["tagdefs"][tKey]["height"]
+            put item 6 of tLine into tMap["tagdefs"][tKey]["effect"]
+            if tMap["tagdefs"][tKey]["effect"] is empty then put "none" into tMap["tagdefs"][tKey]["effect"]
             break
       end switch
    end repeat
@@ -202,7 +205,8 @@ function CellMap.ToText pMap
       sort lines of tChars
       repeat for each line tKey in tChars
          put tKey & tab & pMap["tagdefs"][tKey]["name"] & tab & pMap["tagdefs"][tKey]["colour"] & tab & \
-               pMap["tagdefs"][tKey]["solid"] & tab & pMap["tagdefs"][tKey]["height"] & return after tOut
+               pMap["tagdefs"][tKey]["solid"] & tab & pMap["tagdefs"][tKey]["height"] & tab & \
+               pMap["tagdefs"][tKey]["effect"] & return after tOut
       end repeat
    end if
    return tOut
@@ -227,7 +231,7 @@ end CellMap.ReadText
 
 -------------------------------------------------------------------- tags and fonts
 
--- tags_default.txt: code, char, name, colour, solid, height, group (tab separated)
+-- tags_default.txt: code, char, name, colour, solid, height, group, effect (tab separated)
 function CellMap.TagsFromText pText
    local tTags, tLine, tCode
    set the itemDel to tab
@@ -241,6 +245,7 @@ function CellMap.TagsFromText pText
       put item 5 of tLine into tTags[tCode]["solid"]
       put item 6 of tLine into tTags[tCode]["height"]
       put item 7 of tLine into tTags[tCode]["group"]
+      put item 8 of tLine into tTags[tCode]["effect"]
    end repeat
    return tTags
 end CellMap.TagsFromText

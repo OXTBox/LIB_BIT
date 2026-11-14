@@ -1,0 +1,39 @@
+repeat for each item tL in "lib_cellmap,build_editor,lib_bit,BitEditor"
+  if there is a stack tL then
+    if tL is not "BitEditor" then stop using stack tL
+    delete stack tL
+  end if
+end repeat
+start using stack "//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/livecode/build_editor.livecodescript"
+Build.Editor "//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor"
+put the result into tPath
+send "Ed.Init" to stack "BitEditor"
+put "built: " & tPath & return & "init: " & value("Ed.State()", stack "BitEditor") & return into tLog
+put "list lines: " & the number of lines of field "Codes" of stack "BitEditor" & "; line 36: " & line 36 of field "Codes" of stack "BitEditor" & return after tLog
+put "info: " & field "Info" of stack "BitEditor" & return after tLog
+put "map cells: " & the number of graphics of group "MapView" of stack "BitEditor" & "; cell 1,2 label " & the label of graphic "m_1_2" of stack "BitEditor" & " tip: " & the tooltip of graphic "m_2_2" of stack "BitEditor" & return after tLog
+send "Ed.SelectCode 67" to stack "BitEditor"
+put the backgroundColor of graphic "b_1_1" of stack "BitEditor" into tBefore
+send "Ed.SetBit 1,1" to stack "BitEditor"
+put "bit 1,1: " & tBefore & " -> " & the backgroundColor of graphic "b_1_1" of stack "BitEditor" & return after tLog
+send "Ed.GlyphDo " & quote & "Flip Horizontal" & quote to stack "BitEditor"
+send "Ed.SelectCode 94" to stack "BitEditor"
+send "Ed.MapDown " & quote & "m_2_4" & quote & ",1" to stack "BitEditor"
+send "Ed.MouseUp" to stack "BitEditor"
+put "painted 2,4: " & the label of graphic "m_2_4" of stack "BitEditor" & " / " & the tooltip of graphic "m_2_4" of stack "BitEditor" & return after tLog
+send "Ed.MapDown " & quote & "m_1_3" & quote & ",3" to stack "BitEditor"
+put "right-click picked: " & value("Ed.State()", stack "BitEditor") & return after tLog
+send "Ed.SetView " & quote & "heights" & quote to stack "BitEditor"
+put "heights view 1,1: " & the label of graphic "m_1_1" of stack "BitEditor" & return after tLog
+send "Ed.SetView " & quote & "design" & quote to stack "BitEditor"
+put "design view 1,2: " & the label of graphic "m_1_2" of stack "BitEditor" & return after tLog
+send "Ed.SetView " & quote & "tags" & quote to stack "BitEditor"
+send "Ed.Resize 20,15" to stack "BitEditor"
+put "resized: " & the number of graphics of group "MapView" of stack "BitEditor" & " cells; " & value("Ed.State()", stack "BitEditor") & return after tLog
+send "Ed.ShowTab " & quote & "Vibe" & quote to stack "BitEditor"
+put "Vibe tab: map visible " & the visible of group "MapView" of stack "BitEditor" & "; note: " & line 1 of field "NotYet" of stack "BitEditor" & return after tLog
+send "Ed.ShowTab " & quote & "1bit" & quote to stack "BitEditor"
+send "Ed.SaveMap " & quote & "//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/tests/_test_saved.cellmap" & quote to stack "BitEditor"
+put "status: " & field "Status" of stack "BitEditor" & return after tLog
+delete stack "BitEditor"
+return tLog

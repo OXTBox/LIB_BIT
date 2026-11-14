@@ -1,258 +1,259 @@
-# cellmap tag table: code, char (empty = not printable), name, colour, solid, height (0-35), group
+# cellmap tag table: code, char (empty = not printable), name, colour, solid, height (0-35), group, effect
+# effect = what the cell does when an actor touches or enters it: block, climb, damage, fall, give, goal, heal, kill, launch, light, locked, none, open, path, roof, slide, slow, spawn, start, swim, talk, teleport, text, trigger
 # Colours are data, not code: change any; regenerate with "cellmap.py tags" (R G B Y M C, a new shade a round).
-0		custom 0	#FF3333	0	0	custom
-1		custom 1	#33FF33	0	0	custom
-2		custom 2	#3366FF	0	0	custom
-3		custom 3	#FFEE33	0	0	custom
-4		custom 4	#FF33FF	0	0	custom
-5		custom 5	#33FFFF	0	0	custom
-6		custom 6	#D96262	0	0	custom
-7		custom 7	#62D962	0	0	custom
-8		custom 8	#627FD9	0	0	custom
-9		custom 9	#D9CF62	0	0	custom
-10		custom 10	#D962D9	0	0	custom
-11		custom 11	#62D9D9	0	0	custom
-12		custom 12	#B20909	0	0	custom
-13		custom 13	#09B209	0	0	custom
-14		custom 14	#0933B2	0	0	custom
-15		custom 15	#B2A409	0	0	custom
-16		custom 16	#B209B2	0	0	custom
-17		custom 17	#09B2B2	0	0	custom
-18		custom 18	#FF9999	0	0	custom
-19		custom 19	#99FF99	0	0	custom
-20		custom 20	#99B2FF	0	0	custom
-21		custom 21	#FFF699	0	0	custom
-22		custom 22	#FF99FF	0	0	custom
-23		custom 23	#99FFFF	0	0	custom
-24		custom 24	#8C3131	0	0	custom
-25		custom 25	#318C31	0	0	custom
-26		custom 26	#31488C	0	0	custom
-27		custom 27	#8C8531	0	0	custom
-28		custom 28	#8C318C	0	0	custom
-29		custom 29	#318C8C	0	0	custom
-30		custom 30	#F2AAAA	0	0	custom
-31		custom 31	#AAF2AA	0	0	custom
-32	 	void (nothing, outside the map)	#AABCF2	0	0	space
-33	!	potion / health	#F2ECAA	0	0	item
-34	"	web	#F2AAF2	0	0	hazard
-35	#	wall	#AAF2F2	1	9	structure
-36	$	gold	#FF3333	0	0	item
-37	%	food	#33FF33	0	0	item
-38	&	boss	#3366FF	1	0	actor
-39	'	open door	#FFEE33	0	9	structure
-40	(	tool	#FF33FF	0	0	item
-41	)	weapon	#33FFFF	0	0	item
-42	*	gem	#D96262	0	0	item
-43	+	door (closed)	#62D962	1	9	structure
-44	,	grass	#627FD9	0	0	floor
-45	-	bridge	#D9CF62	0	0	floor
-46	.	floor	#D962D9	0	0	floor
-47	/	lever	#62D9D9	0	2	device
-48	0	boulder	#B20909	1	5	structure
-49	1	waypoint 1	#09B209	0	0	marker
-50	2	waypoint 2	#0933B2	0	0	marker
-51	3	waypoint 3	#B2A409	0	0	marker
-52	4	waypoint 4	#B209B2	0	0	marker
-53	5	waypoint 5	#09B2B2	0	0	marker
-54	6	waypoint 6	#FF9999	0	0	marker
-55	7	waypoint 7	#99FF99	0	0	marker
-56	8	waypoint 8	#99B2FF	0	0	marker
-57	9	waypoint 9	#FFF699	0	0	marker
-58	:	rubble	#FF99FF	0	1	floor
-59	;	fish / water creature	#99FFFF	0	0	actor
-60	<	stairs up	#8C3131	0	4	structure
-61	=	fence	#318C31	1	3	structure
-62	>	stairs down	#31488C	0	0	structure
-63	?	text / sign / scroll	#8C8531	0	0	item
-64	@	player start	#8C318C	0	0	marker
-65	A	altar	#318C8C	1	2	device
-66	B	bed	#F2AAAA	1	1	furniture
-67	C	chest	#AAF2AA	1	2	item
-68	D	door (locked)	#AABCF2	1	9	structure
-69	E	enemy	#F2ECAA	1	0	actor
-70	F	fire	#F2AAF2	0	0	hazard
-71	G	guard	#AAF2F2	1	0	actor
-72	H	health station	#FF3333	0	3	device
-73	I	ice	#33FF33	0	0	floor
-74	J	jump pad	#3366FF	0	0	device
-75	K	key	#FFEE33	0	0	item
-76	L	lava	#FF33FF	0	0	hazard
-77	M	monster spawner	#33FFFF	1	2	device
-78	N	NPC / companion	#D96262	1	0	actor
-79	O	arch (opening)	#62D962	0	9	structure
-80	P	pit	#627FD9	0	0	hazard
-81	Q	quest giver	#D9CF62	1	0	actor
-82	R	ramp	#D962D9	0	4	structure
-83	S	switch	#62D9D9	0	2	device
-84	T	teleporter	#B20909	0	0	device
-85	U	upgrade	#09B209	0	0	item
-86	V	vent	#0933B2	0	0	device
-87	W	window	#B2A409	1	9	structure
-88	X	exit / goal	#B209B2	0	0	marker
-89	Y	ladder	#09B2B2	0	9	structure
-90	Z	zone trigger	#FF9999	0	0	marker
-91	[	armour	#99FF99	0	0	item
-92	\	throne	#99B2FF	1	3	furniture
-93	]	shelf	#FFF699	1	6	furniture
-94	^	trap	#FF99FF	0	0	hazard
-95	_	step (low block)	#99FFFF	0	1	structure
-96	`	stone	#8C3131	0	1	floor
-97	a	ammo	#318C31	0	0	item
-98	b	barrel	#31488C	1	3	furniture
-99	c	crate	#8C8531	1	3	furniture
-100	d	debris	#8C318C	0	1	floor
-101	e	energy cell	#318C8C	0	0	item
-102	f	plant	#F2AAAA	0	0	floor
-103	g	gas	#AAF2AA	0	0	hazard
-104	h	hole in the ceiling	#AABCF2	0	0	structure
-105	i	info terminal	#F2ECAA	1	3	device
-106	j	jar	#F2AAF2	1	1	furniture
-107	k	keycard	#AAF2F2	0	0	item
-108	l	lamp	#FF3333	0	0	device
-109	m	map piece	#33FF33	0	0	item
-110	n	noise maker	#3366FF	1	2	device
-111	o	ball / orb	#FFEE33	0	0	item
-112	p	pressure plate	#FF33FF	0	0	device
-113	q	quicksand	#33FFFF	0	0	hazard
-114	r	rat	#D96262	0	0	actor
-115	s	spikes	#62D962	0	1	hazard
-116	t	torch	#627FD9	0	0	device
-117	u	unknown	#D9CF62	0	0	marker
-118	v	vine	#D962D9	0	9	structure
-119	w	water (shallow)	#62D9D9	0	0	floor
-120	x	dig spot	#B20909	0	0	marker
-121	y	camera / sensor	#09B209	0	6	device
-122	z	zombie	#0933B2	1	0	actor
-123	{	fountain	#B2A409	1	2	device
-124	|	pillar	#B209B2	1	9	structure
-125	}	water (deep)	#09B2B2	0	0	hazard
-126	~	tunnel (roofed hallway)	#FF9999	0	0	structure
-127		custom 127	#99FF99	0	0	custom
-128		custom 128	#99B2FF	0	0	custom
-129		custom 129	#FFF699	0	0	custom
-130		custom 130	#FF99FF	0	0	custom
-131		custom 131	#99FFFF	0	0	custom
-132		custom 132	#8C3131	0	0	custom
-133		custom 133	#318C31	0	0	custom
-134		custom 134	#31488C	0	0	custom
-135		custom 135	#8C8531	0	0	custom
-136		custom 136	#8C318C	0	0	custom
-137		custom 137	#318C8C	0	0	custom
-138		custom 138	#F2AAAA	0	0	custom
-139		custom 139	#AAF2AA	0	0	custom
-140		custom 140	#AABCF2	0	0	custom
-141		custom 141	#F2ECAA	0	0	custom
-142		custom 142	#F2AAF2	0	0	custom
-143		custom 143	#AAF2F2	0	0	custom
-144		custom 144	#FF3333	0	0	custom
-145		custom 145	#33FF33	0	0	custom
-146		custom 146	#3366FF	0	0	custom
-147		custom 147	#FFEE33	0	0	custom
-148		custom 148	#FF33FF	0	0	custom
-149		custom 149	#33FFFF	0	0	custom
-150		custom 150	#D96262	0	0	custom
-151		custom 151	#62D962	0	0	custom
-152		custom 152	#627FD9	0	0	custom
-153		custom 153	#D9CF62	0	0	custom
-154		custom 154	#D962D9	0	0	custom
-155		custom 155	#62D9D9	0	0	custom
-156		custom 156	#B20909	0	0	custom
-157		custom 157	#09B209	0	0	custom
-158		custom 158	#0933B2	0	0	custom
-159		custom 159	#B2A409	0	0	custom
-160		custom 160	#B209B2	0	0	custom
-161	¡	custom 161	#09B2B2	0	0	custom
-162	¢	custom 162	#FF9999	0	0	custom
-163	£	custom 163	#99FF99	0	0	custom
-164	¤	custom 164	#99B2FF	0	0	custom
-165	¥	custom 165	#FFF699	0	0	custom
-166	¦	custom 166	#FF99FF	0	0	custom
-167	§	custom 167	#99FFFF	0	0	custom
-168	¨	custom 168	#8C3131	0	0	custom
-169	©	custom 169	#318C31	0	0	custom
-170	ª	custom 170	#31488C	0	0	custom
-171	«	custom 171	#8C8531	0	0	custom
-172	¬	custom 172	#8C318C	0	0	custom
-173	­	custom 173	#318C8C	0	0	custom
-174	®	custom 174	#F2AAAA	0	0	custom
-175	¯	custom 175	#AAF2AA	0	0	custom
-176	°	custom 176	#AABCF2	0	0	custom
-177	±	custom 177	#F2ECAA	0	0	custom
-178	²	custom 178	#F2AAF2	0	0	custom
-179	³	custom 179	#AAF2F2	0	0	custom
-180	´	custom 180	#FF3333	0	0	custom
-181	µ	custom 181	#33FF33	0	0	custom
-182	¶	custom 182	#3366FF	0	0	custom
-183	·	custom 183	#FFEE33	0	0	custom
-184	¸	custom 184	#FF33FF	0	0	custom
-185	¹	custom 185	#33FFFF	0	0	custom
-186	º	custom 186	#D96262	0	0	custom
-187	»	custom 187	#62D962	0	0	custom
-188	¼	custom 188	#627FD9	0	0	custom
-189	½	custom 189	#D9CF62	0	0	custom
-190	¾	custom 190	#D962D9	0	0	custom
-191	¿	custom 191	#62D9D9	0	0	custom
-192	À	custom 192	#B20909	0	0	custom
-193	Á	custom 193	#09B209	0	0	custom
-194	Â	custom 194	#0933B2	0	0	custom
-195	Ã	custom 195	#B2A409	0	0	custom
-196	Ä	custom 196	#B209B2	0	0	custom
-197	Å	custom 197	#09B2B2	0	0	custom
-198	Æ	custom 198	#FF9999	0	0	custom
-199	Ç	custom 199	#99FF99	0	0	custom
-200	È	custom 200	#99B2FF	0	0	custom
-201	É	custom 201	#FFF699	0	0	custom
-202	Ê	custom 202	#FF99FF	0	0	custom
-203	Ë	custom 203	#99FFFF	0	0	custom
-204	Ì	custom 204	#8C3131	0	0	custom
-205	Í	custom 205	#318C31	0	0	custom
-206	Î	custom 206	#31488C	0	0	custom
-207	Ï	custom 207	#8C8531	0	0	custom
-208	Ð	custom 208	#8C318C	0	0	custom
-209	Ñ	custom 209	#318C8C	0	0	custom
-210	Ò	custom 210	#F2AAAA	0	0	custom
-211	Ó	custom 211	#AAF2AA	0	0	custom
-212	Ô	custom 212	#AABCF2	0	0	custom
-213	Õ	custom 213	#F2ECAA	0	0	custom
-214	Ö	custom 214	#F2AAF2	0	0	custom
-215	×	custom 215	#AAF2F2	0	0	custom
-216	Ø	custom 216	#FF3333	0	0	custom
-217	Ù	custom 217	#33FF33	0	0	custom
-218	Ú	custom 218	#3366FF	0	0	custom
-219	Û	custom 219	#FFEE33	0	0	custom
-220	Ü	custom 220	#FF33FF	0	0	custom
-221	Ý	custom 221	#33FFFF	0	0	custom
-222	Þ	custom 222	#D96262	0	0	custom
-223	ß	custom 223	#62D962	0	0	custom
-224	à	custom 224	#627FD9	0	0	custom
-225	á	custom 225	#D9CF62	0	0	custom
-226	â	custom 226	#D962D9	0	0	custom
-227	ã	custom 227	#62D9D9	0	0	custom
-228	ä	custom 228	#B20909	0	0	custom
-229	å	custom 229	#09B209	0	0	custom
-230	æ	custom 230	#0933B2	0	0	custom
-231	ç	custom 231	#B2A409	0	0	custom
-232	è	custom 232	#B209B2	0	0	custom
-233	é	custom 233	#09B2B2	0	0	custom
-234	ê	custom 234	#FF9999	0	0	custom
-235	ë	custom 235	#99FF99	0	0	custom
-236	ì	custom 236	#99B2FF	0	0	custom
-237	í	custom 237	#FFF699	0	0	custom
-238	î	custom 238	#FF99FF	0	0	custom
-239	ï	custom 239	#99FFFF	0	0	custom
-240	ð	custom 240	#8C3131	0	0	custom
-241	ñ	custom 241	#318C31	0	0	custom
-242	ò	custom 242	#31488C	0	0	custom
-243	ó	custom 243	#8C8531	0	0	custom
-244	ô	custom 244	#8C318C	0	0	custom
-245	õ	custom 245	#318C8C	0	0	custom
-246	ö	custom 246	#F2AAAA	0	0	custom
-247	÷	custom 247	#AAF2AA	0	0	custom
-248	ø	custom 248	#AABCF2	0	0	custom
-249	ù	custom 249	#F2ECAA	0	0	custom
-250	ú	custom 250	#F2AAF2	0	0	custom
-251	û	custom 251	#AAF2F2	0	0	custom
-252	ü	custom 252	#FF3333	0	0	custom
-253	ý	custom 253	#33FF33	0	0	custom
-254	þ	custom 254	#3366FF	0	0	custom
-255	ÿ	custom 255	#FFEE33	0	0	custom
+0		custom 0	#FF3333	0	0	custom	none
+1		custom 1	#33FF33	0	0	custom	none
+2		custom 2	#3366FF	0	0	custom	none
+3		custom 3	#FFEE33	0	0	custom	none
+4		custom 4	#FF33FF	0	0	custom	none
+5		custom 5	#33FFFF	0	0	custom	none
+6		custom 6	#D96262	0	0	custom	none
+7		custom 7	#62D962	0	0	custom	none
+8		custom 8	#627FD9	0	0	custom	none
+9		custom 9	#D9CF62	0	0	custom	none
+10		custom 10	#D962D9	0	0	custom	none
+11		custom 11	#62D9D9	0	0	custom	none
+12		custom 12	#B20909	0	0	custom	none
+13		custom 13	#09B209	0	0	custom	none
+14		custom 14	#0933B2	0	0	custom	none
+15		custom 15	#B2A409	0	0	custom	none
+16		custom 16	#B209B2	0	0	custom	none
+17		custom 17	#09B2B2	0	0	custom	none
+18		custom 18	#FF9999	0	0	custom	none
+19		custom 19	#99FF99	0	0	custom	none
+20		custom 20	#99B2FF	0	0	custom	none
+21		custom 21	#FFF699	0	0	custom	none
+22		custom 22	#FF99FF	0	0	custom	none
+23		custom 23	#99FFFF	0	0	custom	none
+24		custom 24	#8C3131	0	0	custom	none
+25		custom 25	#318C31	0	0	custom	none
+26		custom 26	#31488C	0	0	custom	none
+27		custom 27	#8C8531	0	0	custom	none
+28		custom 28	#8C318C	0	0	custom	none
+29		custom 29	#318C8C	0	0	custom	none
+30		custom 30	#F2AAAA	0	0	custom	none
+31		custom 31	#AAF2AA	0	0	custom	none
+32	 	void (nothing, outside the map)	#AABCF2	0	0	space	none
+33	!	potion / health	#F2ECAA	0	0	item	heal
+34	"	web	#F2AAF2	0	0	hazard	slow
+35	#	wall	#AAF2F2	1	9	structure	block
+36	$	gold	#FF3333	0	0	item	give
+37	%	food	#33FF33	0	0	item	heal
+38	&	boss	#3366FF	1	0	actor	damage
+39	'	open door	#FFEE33	0	9	structure	path
+40	(	tool	#FF33FF	0	0	item	give
+41	)	weapon	#33FFFF	0	0	item	give
+42	*	gem	#D96262	0	0	item	give
+43	+	door (closed)	#62D962	1	9	structure	open
+44	,	grass	#627FD9	0	0	floor	path
+45	-	bridge	#D9CF62	0	0	floor	path
+46	.	floor	#D962D9	0	0	floor	path
+47	/	lever	#62D9D9	0	2	device	trigger
+48	0	boulder	#B20909	1	5	structure	block
+49	1	waypoint 1	#09B209	0	0	marker	path
+50	2	waypoint 2	#0933B2	0	0	marker	path
+51	3	waypoint 3	#B2A409	0	0	marker	path
+52	4	waypoint 4	#B209B2	0	0	marker	path
+53	5	waypoint 5	#09B2B2	0	0	marker	path
+54	6	waypoint 6	#FF9999	0	0	marker	path
+55	7	waypoint 7	#99FF99	0	0	marker	path
+56	8	waypoint 8	#99B2FF	0	0	marker	path
+57	9	waypoint 9	#FFF699	0	0	marker	path
+58	:	rubble	#FF99FF	0	1	floor	slow
+59	;	fish / water creature	#99FFFF	0	0	actor	damage
+60	<	stairs up	#8C3131	0	4	structure	climb
+61	=	fence	#318C31	1	3	structure	block
+62	>	stairs down	#31488C	0	0	structure	fall
+63	?	text / sign / scroll	#8C8531	0	0	item	text
+64	@	player start	#8C318C	0	0	marker	start
+65	A	altar	#318C8C	1	2	device	trigger
+66	B	bed	#F2AAAA	1	1	furniture	heal
+67	C	chest	#AAF2AA	1	2	item	give
+68	D	door (locked)	#AABCF2	1	9	structure	locked
+69	E	enemy	#F2ECAA	1	0	actor	damage
+70	F	fire	#F2AAF2	0	0	hazard	damage
+71	G	guard	#AAF2F2	1	0	actor	damage
+72	H	health station	#FF3333	0	3	device	heal
+73	I	ice	#33FF33	0	0	floor	slide
+74	J	jump pad	#3366FF	0	0	device	launch
+75	K	key	#FFEE33	0	0	item	give
+76	L	lava	#FF33FF	0	0	hazard	kill
+77	M	monster spawner	#33FFFF	1	2	device	spawn
+78	N	NPC / companion	#D96262	1	0	actor	talk
+79	O	arch (opening)	#62D962	0	9	structure	path
+80	P	pit	#627FD9	0	0	hazard	fall
+81	Q	quest giver	#D9CF62	1	0	actor	talk
+82	R	ramp	#D962D9	0	4	structure	climb
+83	S	switch	#62D9D9	0	2	device	trigger
+84	T	teleporter	#B20909	0	0	device	teleport
+85	U	upgrade	#09B209	0	0	item	give
+86	V	vent	#0933B2	0	0	device	launch
+87	W	window	#B2A409	1	9	structure	block
+88	X	exit / goal	#B209B2	0	0	marker	goal
+89	Y	ladder	#09B2B2	0	9	structure	climb
+90	Z	zone trigger	#FF9999	0	0	marker	trigger
+91	[	armour	#99FF99	0	0	item	give
+92	\	throne	#99B2FF	1	3	furniture	block
+93	]	shelf	#FFF699	1	6	furniture	block
+94	^	trap	#FF99FF	0	0	hazard	damage
+95	_	step (low block)	#99FFFF	0	1	structure	climb
+96	`	stone	#8C3131	0	1	floor	path
+97	a	ammo	#318C31	0	0	item	give
+98	b	barrel	#31488C	1	3	furniture	block
+99	c	crate	#8C8531	1	3	furniture	block
+100	d	debris	#8C318C	0	1	floor	slow
+101	e	energy cell	#318C8C	0	0	item	give
+102	f	plant	#F2AAAA	0	0	floor	path
+103	g	gas	#AAF2AA	0	0	hazard	damage
+104	h	hole in the ceiling	#AABCF2	0	0	structure	light
+105	i	info terminal	#F2ECAA	1	3	device	text
+106	j	jar	#F2AAF2	1	1	furniture	block
+107	k	keycard	#AAF2F2	0	0	item	give
+108	l	lamp	#FF3333	0	0	device	light
+109	m	map piece	#33FF33	0	0	item	give
+110	n	noise maker	#3366FF	1	2	device	trigger
+111	o	ball / orb	#FFEE33	0	0	item	give
+112	p	pressure plate	#FF33FF	0	0	device	trigger
+113	q	quicksand	#33FFFF	0	0	hazard	slow
+114	r	rat	#D96262	0	0	actor	damage
+115	s	spikes	#62D962	0	1	hazard	damage
+116	t	torch	#627FD9	0	0	device	light
+117	u	unknown	#D9CF62	0	0	marker	none
+118	v	vine	#D962D9	0	9	structure	climb
+119	w	water (shallow)	#62D9D9	0	0	floor	slow
+120	x	dig spot	#B20909	0	0	marker	trigger
+121	y	camera / sensor	#09B209	0	6	device	trigger
+122	z	zombie	#0933B2	1	0	actor	damage
+123	{	fountain	#B2A409	1	2	device	heal
+124	|	pillar	#B209B2	1	9	structure	block
+125	}	water (deep)	#09B2B2	0	0	hazard	swim
+126	~	tunnel (roofed hallway)	#FF9999	0	0	structure	roof
+127		custom 127	#99FF99	0	0	custom	none
+128		custom 128	#99B2FF	0	0	custom	none
+129		custom 129	#FFF699	0	0	custom	none
+130		custom 130	#FF99FF	0	0	custom	none
+131		custom 131	#99FFFF	0	0	custom	none
+132		custom 132	#8C3131	0	0	custom	none
+133		custom 133	#318C31	0	0	custom	none
+134		custom 134	#31488C	0	0	custom	none
+135		custom 135	#8C8531	0	0	custom	none
+136		custom 136	#8C318C	0	0	custom	none
+137		custom 137	#318C8C	0	0	custom	none
+138		custom 138	#F2AAAA	0	0	custom	none
+139		custom 139	#AAF2AA	0	0	custom	none
+140		custom 140	#AABCF2	0	0	custom	none
+141		custom 141	#F2ECAA	0	0	custom	none
+142		custom 142	#F2AAF2	0	0	custom	none
+143		custom 143	#AAF2F2	0	0	custom	none
+144		custom 144	#FF3333	0	0	custom	none
+145		custom 145	#33FF33	0	0	custom	none
+146		custom 146	#3366FF	0	0	custom	none
+147		custom 147	#FFEE33	0	0	custom	none
+148		custom 148	#FF33FF	0	0	custom	none
+149		custom 149	#33FFFF	0	0	custom	none
+150		custom 150	#D96262	0	0	custom	none
+151		custom 151	#62D962	0	0	custom	none
+152		custom 152	#627FD9	0	0	custom	none
+153		custom 153	#D9CF62	0	0	custom	none
+154		custom 154	#D962D9	0	0	custom	none
+155		custom 155	#62D9D9	0	0	custom	none
+156		custom 156	#B20909	0	0	custom	none
+157		custom 157	#09B209	0	0	custom	none
+158		custom 158	#0933B2	0	0	custom	none
+159		custom 159	#B2A409	0	0	custom	none
+160		custom 160	#B209B2	0	0	custom	none
+161	¡	custom 161	#09B2B2	0	0	custom	none
+162	¢	custom 162	#FF9999	0	0	custom	none
+163	£	custom 163	#99FF99	0	0	custom	none
+164	¤	custom 164	#99B2FF	0	0	custom	none
+165	¥	custom 165	#FFF699	0	0	custom	none
+166	¦	custom 166	#FF99FF	0	0	custom	none
+167	§	custom 167	#99FFFF	0	0	custom	none
+168	¨	custom 168	#8C3131	0	0	custom	none
+169	©	custom 169	#318C31	0	0	custom	none
+170	ª	custom 170	#31488C	0	0	custom	none
+171	«	custom 171	#8C8531	0	0	custom	none
+172	¬	custom 172	#8C318C	0	0	custom	none
+173	­	custom 173	#318C8C	0	0	custom	none
+174	®	custom 174	#F2AAAA	0	0	custom	none
+175	¯	custom 175	#AAF2AA	0	0	custom	none
+176	°	custom 176	#AABCF2	0	0	custom	none
+177	±	custom 177	#F2ECAA	0	0	custom	none
+178	²	custom 178	#F2AAF2	0	0	custom	none
+179	³	custom 179	#AAF2F2	0	0	custom	none
+180	´	custom 180	#FF3333	0	0	custom	none
+181	µ	custom 181	#33FF33	0	0	custom	none
+182	¶	custom 182	#3366FF	0	0	custom	none
+183	·	custom 183	#FFEE33	0	0	custom	none
+184	¸	custom 184	#FF33FF	0	0	custom	none
+185	¹	custom 185	#33FFFF	0	0	custom	none
+186	º	custom 186	#D96262	0	0	custom	none
+187	»	custom 187	#62D962	0	0	custom	none
+188	¼	custom 188	#627FD9	0	0	custom	none
+189	½	custom 189	#D9CF62	0	0	custom	none
+190	¾	custom 190	#D962D9	0	0	custom	none
+191	¿	custom 191	#62D9D9	0	0	custom	none
+192	À	custom 192	#B20909	0	0	custom	none
+193	Á	custom 193	#09B209	0	0	custom	none
+194	Â	custom 194	#0933B2	0	0	custom	none
+195	Ã	custom 195	#B2A409	0	0	custom	none
+196	Ä	custom 196	#B209B2	0	0	custom	none
+197	Å	custom 197	#09B2B2	0	0	custom	none
+198	Æ	custom 198	#FF9999	0	0	custom	none
+199	Ç	custom 199	#99FF99	0	0	custom	none
+200	È	custom 200	#99B2FF	0	0	custom	none
+201	É	custom 201	#FFF699	0	0	custom	none
+202	Ê	custom 202	#FF99FF	0	0	custom	none
+203	Ë	custom 203	#99FFFF	0	0	custom	none
+204	Ì	custom 204	#8C3131	0	0	custom	none
+205	Í	custom 205	#318C31	0	0	custom	none
+206	Î	custom 206	#31488C	0	0	custom	none
+207	Ï	custom 207	#8C8531	0	0	custom	none
+208	Ð	custom 208	#8C318C	0	0	custom	none
+209	Ñ	custom 209	#318C8C	0	0	custom	none
+210	Ò	custom 210	#F2AAAA	0	0	custom	none
+211	Ó	custom 211	#AAF2AA	0	0	custom	none
+212	Ô	custom 212	#AABCF2	0	0	custom	none
+213	Õ	custom 213	#F2ECAA	0	0	custom	none
+214	Ö	custom 214	#F2AAF2	0	0	custom	none
+215	×	custom 215	#AAF2F2	0	0	custom	none
+216	Ø	custom 216	#FF3333	0	0	custom	none
+217	Ù	custom 217	#33FF33	0	0	custom	none
+218	Ú	custom 218	#3366FF	0	0	custom	none
+219	Û	custom 219	#FFEE33	0	0	custom	none
+220	Ü	custom 220	#FF33FF	0	0	custom	none
+221	Ý	custom 221	#33FFFF	0	0	custom	none
+222	Þ	custom 222	#D96262	0	0	custom	none
+223	ß	custom 223	#62D962	0	0	custom	none
+224	à	custom 224	#627FD9	0	0	custom	none
+225	á	custom 225	#D9CF62	0	0	custom	none
+226	â	custom 226	#D962D9	0	0	custom	none
+227	ã	custom 227	#62D9D9	0	0	custom	none
+228	ä	custom 228	#B20909	0	0	custom	none
+229	å	custom 229	#09B209	0	0	custom	none
+230	æ	custom 230	#0933B2	0	0	custom	none
+231	ç	custom 231	#B2A409	0	0	custom	none
+232	è	custom 232	#B209B2	0	0	custom	none
+233	é	custom 233	#09B2B2	0	0	custom	none
+234	ê	custom 234	#FF9999	0	0	custom	none
+235	ë	custom 235	#99FF99	0	0	custom	none
+236	ì	custom 236	#99B2FF	0	0	custom	none
+237	í	custom 237	#FFF699	0	0	custom	none
+238	î	custom 238	#FF99FF	0	0	custom	none
+239	ï	custom 239	#99FFFF	0	0	custom	none
+240	ð	custom 240	#8C3131	0	0	custom	none
+241	ñ	custom 241	#318C31	0	0	custom	none
+242	ò	custom 242	#31488C	0	0	custom	none
+243	ó	custom 243	#8C8531	0	0	custom	none
+244	ô	custom 244	#8C318C	0	0	custom	none
+245	õ	custom 245	#318C8C	0	0	custom	none
+246	ö	custom 246	#F2AAAA	0	0	custom	none
+247	÷	custom 247	#AAF2AA	0	0	custom	none
+248	ø	custom 248	#AABCF2	0	0	custom	none
+249	ù	custom 249	#F2ECAA	0	0	custom	none
+250	ú	custom 250	#F2AAF2	0	0	custom	none
+251	û	custom 251	#AAF2F2	0	0	custom	none
+252	ü	custom 252	#FF3333	0	0	custom	none
+253	ý	custom 253	#33FF33	0	0	custom	none
+254	þ	custom 254	#3366FF	0	0	custom	none
+255	ÿ	custom 255	#FFEE33	0	0	custom	none

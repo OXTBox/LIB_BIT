@@ -116,6 +116,28 @@ TAGS = [
     ('~', 'tunnel (roofed hallway)', 0, 0, 'structure'),
 ]
 
+# what the cell DOES when an actor touches or enters it (the owner, 11 14 2026: "as a TAG it
+# defines the function/effect of the cell"). Effect words are a small vocabulary a game reads:
+#   none, block, open, locked (needs a key), damage, kill, heal, give (picked up), teleport,
+#   climb, slide, slow, swim, launch, fall, trigger, spawn, talk, start, goal, path, text, light, roof
+EFFECTS = {
+    ' ': 'none', '!': 'heal', '"': 'slow', '#': 'block', '$': 'give', '%': 'heal', '&': 'damage',
+    "'": 'path', '(': 'give', ')': 'give', '*': 'give', '+': 'open', ',': 'path', '-': 'path',
+    '.': 'path', '/': 'trigger', '0': 'block', ':': 'slow', ';': 'damage', '<': 'climb',
+    '=': 'block', '>': 'fall', '?': 'text', '@': 'start', 'A': 'trigger', 'B': 'heal', 'C': 'give',
+    'D': 'locked', 'E': 'damage', 'F': 'damage', 'G': 'damage', 'H': 'heal', 'I': 'slide',
+    'J': 'launch', 'K': 'give', 'L': 'kill', 'M': 'spawn', 'N': 'talk', 'O': 'path', 'P': 'fall',
+    'Q': 'talk', 'R': 'climb', 'S': 'trigger', 'T': 'teleport', 'U': 'give', 'V': 'launch',
+    'W': 'block', 'X': 'goal', 'Y': 'climb', 'Z': 'trigger', '[': 'give', '\\': 'block',
+    ']': 'block', '^': 'damage', '_': 'climb', '`': 'path', 'a': 'give', 'b': 'block', 'c': 'block',
+    'd': 'slow', 'e': 'give', 'f': 'path', 'g': 'damage', 'h': 'light', 'i': 'text', 'j': 'block',
+    'k': 'give', 'l': 'light', 'm': 'give', 'n': 'trigger', 'o': 'give', 'p': 'trigger', 'q': 'slow',
+    'r': 'damage', 's': 'damage', 't': 'light', 'u': 'none', 'v': 'climb', 'w': 'slow', 'x': 'trigger',
+    'y': 'trigger', 'z': 'damage', '{': 'heal', '|': 'block', '}': 'swim', '~': 'roof',
+    '1': 'path', '2': 'path', '3': 'path', '4': 'path', '5': 'path', '6': 'path', '7': 'path',
+    '8': 'path', '9': 'path',
+}
+
 # R, G, B, Y, M, C again and again, a new shade every round: neighbours never share a hue
 HUES = [0, 120, 225, 55, 300, 180]
 SHADES = [(0.80, 1.00), (0.55, 0.85), (0.95, 0.70), (0.40, 1.00), (0.65, 0.55), (0.30, 0.95)]
@@ -135,10 +157,11 @@ def tag_table():
     for code in range(256):
         t = named.get(code)
         if t:
-            out.append(dict(code=code, char=t[0], name=t[1], solid=t[2], height=t[3], group=t[4]))
+            out.append(dict(code=code, char=t[0], name=t[1], solid=t[2], height=t[3], group=t[4],
+                            effect=EFFECTS.get(t[0], 'none')))
         else:
             out.append(dict(code=code, char=chr(code) if code >= 161 else '', name='custom %d' % code,
-                            solid=0, height=0, group='custom'))
+                            solid=0, height=0, group='custom', effect='none'))
     for i, t in enumerate(out):
         t['colour'] = colour(i)
     return out
@@ -146,10 +169,11 @@ def tag_table():
 
 def write_tags(path=None):
     path = path or os.path.join(ROOT, 'data', 'tags_default.txt')
-    lines = ['# cellmap tag table: code, char (empty = not printable), name, colour, solid, height (0-35), group',
+    lines = ['# cellmap tag table: code, char (empty = not printable), name, colour, solid, height (0-35), group, effect',
+             '# effect = what the cell does when an actor touches or enters it: ' + ', '.join(sorted(set(EFFECTS.values()))),
              '# Colours are data, not code: change any; regenerate with "cellmap.py tags" (R G B Y M C, a new shade a round).']
     for t in tag_table():
-        lines.append('\t'.join(str(t[k]) for k in ('code', 'char', 'name', 'colour', 'solid', 'height', 'group')))
+        lines.append('\t'.join(str(t[k]) for k in ('code', 'char', 'name', 'colour', 'solid', 'height', 'group', 'effect')))
     open(path, 'w', encoding='utf-8', newline='\n').write('\n'.join(lines) + '\n')
     return path
 
@@ -221,7 +245,7 @@ def write_map(m, path):
     if m.get('tagdefs'):
         out.append('[tagdefs]')
         for ch, t in sorted(m['tagdefs'].items()):
-            out.append('\t'.join([ch, t['name'], t['colour'], str(t['solid']), str(t['height'])]))
+            out.append('\t'.join([ch, t['name'], t['colour'], str(t['solid']), str(t['height']), t.get('effect', 'none')]))
     open(path, 'w', encoding='utf-8', newline='\n').write('\n'.join(out) + '\n')
 
 
@@ -248,7 +272,8 @@ def read_map(path):
             m['heights'].append([B36.index(c) for c in line])
         elif sec == 'tagdefs' and line:
             f = line.split('\t')
-            m['tagdefs'][f[0]] = dict(name=f[1], colour=f[2], solid=int(f[3]), height=int(f[4]))
+            m['tagdefs'][f[0]] = dict(name=f[1], colour=f[2], solid=int(f[3]), height=int(f[4]),
+                                      effect=f[5] if len(f) > 5 else 'none')
     cols = m['meta'].get('cols', 0)
     for layer, pad in (('design', 32), ('tags', ' '), ('heights', 0)):        # short rows (trimmed spaces) padded
         m[layer] = [row + [pad] * (cols - len(row)) for row in m[layer]]

@@ -42,3 +42,18 @@ font	Base_001    tags	tags_default     version	1
 ```
 In LiveCode: `tMap["meta"][key]`, `tMap["design"|"tags"|"heights"][row][col]`, `tMap["tagdefs"][char][...]`.
 In Python: the same names in a dict of lists. Both write the identical file (tested).
+
+## The editor stack
+Open `BitEditor.livecode` (keep it in this folder: it finds the libraries and data next to it).
+It opens `maps/amazing_couple.cellmap`.
+- **Left:** the 256 codes in their tag colours; type in Filter to narrow (e.g. `hazard`, `door`).
+- **Middle:** the selected code's 16 x 16 glyph: click or drag to flip bits; the quick functions
+  under it (flip, rotate, invert, shift) work on the whole glyph. The panel shows the tag and its
+  **effect** (what the cell does). File > Save Font keeps glyph changes.
+- **Right:** the 1bit tab is the map: click or drag paints the selected code (design, tag and
+  height at once; Tiles > Paint ... Only for one layer); right-click (or Option-click) picks a
+  cell's code. Tiles > View Tags / Design / Heights. Mesh > Height sets the extrusion painted.
+  Vibe and xt3D tabs: not connected yet, on purpose.
+- Rebuild after editing `livecode/editor_stack.livecodescript`:
+  `start using stack ".../editor/livecode/build_editor.livecodescript"` then `Build.Editor ".../editor"`.
+- Test without a window: `~/projects/LIB_MCP/tools/lcmcp --standalone run - < tests/lc_editor_test.txt`
