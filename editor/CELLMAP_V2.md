@@ -210,5 +210,6 @@ A **Heights** tab beside 1bit and Cells: the map's glyphs in two colours a cell.
 | Level segments, levels, ground, walk: Python and LiveCode, same numbers | done, tested |
 | BitEditor Heights tab | done, tested headless with pixel checks; the owner has not seen it yet |
 | Sample map `maps/wizard_pool.cellmap` (pool, dais, tower, clouds, maze corner, screen of glyphs) | done |
-| Vibecode3D card E13 | see `LIB_EDITOR/examples` |
+| Vibecode3D card `LIB_EDITOR/examples/E13_WalkTheMap` | done: headless test of 11 scenes passes; ran in the real engine at 30 frames a second with all 1562 lines, drawn pixels counted per colour from six viewpoints |
+| The same card in the xt3d bench | not started |
 | Boxes for xt3d, stacked maps in the walker, links and objects acting in a game | format only: read and written, not yet used |
