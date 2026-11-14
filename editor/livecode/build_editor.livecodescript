@@ -103,7 +103,7 @@ command Build.Editor pDir
    create button "ViewTabs"
    set the style of it to "menu"
    set the menuMode of it to "tabbed"
-   set the text of it to "1bit" & return & "Cells" & return & "Vibe" & return & "xt3D"
+   set the text of it to "1bit" & return & "Cells" & return & "Heights" & return & "Vibe" & return & "xt3D"
    set the rect of it to 582, 30, 1172, 622
    create graphic "MapFrame"
    set the style of it to "rectangle"
@@ -125,6 +125,11 @@ command Build.Editor pDir
    set the foregroundColor of it to Theme.Get("accent")
    set the uThemeSkip of it to true
    set the visible of it to false
+   -- the Heights view (CELLMAP_V2.md): the map in floor / ceiling colours, tools and swatches over it
+   create image "HeightMap"
+   set the rect of it to 594, 170, 610, 186
+   set the visible of it to false
+   Build.HeightTools
    create field "NotYet"
    set the rect of it to 602, 80, 1152, 220
    set the lockText of it to true
@@ -134,6 +139,8 @@ command Build.Editor pDir
    set the lockText of it to true
    -- one look for everything (fields, buttons, menus by the menu rule), then templates reset
    Theme.ApplyStack tS
+   set the opaque of field "HInfo" of stack tS to false
+   set the showBorder of field "HInfo" of stack tS to false
    set the opaque of field "FilterLabel" of stack tS to false
    Theme.End
    -- the behaviour, then save next to the data
@@ -143,6 +150,85 @@ command Build.Editor pDir
    save stack tS
    return tPath
 end Build.Editor
+
+-- Floor / Ceiling / Blocks buttons, the info lines, four rows of swatches (grey, red, green, blue:
+-- 0, 1, 10, 20 ... 250, 255), the selection box; one group, shown with the Heights tab
+command Build.HeightTools
+   local tValues, v, x, y, tRow, tName, tColour, tShown, tTint
+   reset the templateGroup
+   create group "HeightTools"
+   set the margins of group "HeightTools" to 0
+   set the showBorder of group "HeightTools" to false
+   put 594 into x
+   repeat for each item tName in "Floor,Ceiling,Blocks"
+      create button ("Tool" & tName) in group "HeightTools"
+      set the label of it to tName
+      set the autoHilite of it to false
+      set the rect of it to x, 64, x + 66, 86
+      set the script of it to "on mouseUp" & return & "Ed.HTool " & quote & toLower(tName) & quote & return & "end mouseUp"
+      add 70 to x
+   end repeat
+   set the tooltip of button "ToolFloor" to "Greys paint the floor; glyphs show the floor colour"
+   set the tooltip of button "ToolCeiling" to "Greys paint the ceiling; glyphs show the ceiling colour"
+   set the tooltip of button "ToolBlocks" to "Show squares instead of glyphs (the same two colours)"
+   create field "HInfo" in group "HeightTools"
+   set the rect of it to 808, 60, 1162, 92
+   set the lockText of it to true
+   set the textSize of it to 10
+   set the dontWrap of it to true
+   put "0,1" into tValues
+   put 10 into v
+   repeat while v <= 250
+      put comma & v after tValues
+      add 10 to v
+   end repeat
+   put ",255" after tValues
+   reset the templateGraphic
+   set the style of the templateGraphic to "rectangle"
+   set the filled of the templateGraphic to true
+   set the lineSize of the templateGraphic to 1
+   set the foregroundColor of the templateGraphic to "70,70,78"
+   put 94 into y
+   repeat for each item tRow in "grey,red,green,blue"
+      put 594 into x
+      repeat for each item v in tValues
+         put 0 into tShown
+         if v > 0 then put 40 + round(v * 215 / 255) into tShown
+         put 0 into tTint
+         if v > 0 then put 90 + round(v * 165 / 255) into tTint
+         switch tRow
+            case "grey"
+               put tShown & comma & tShown & comma & tShown into tColour
+               break
+            case "red"
+               put tTint & ",12,12" into tColour
+               break
+            case "green"
+               put "12," & tTint & ",12" into tColour
+               break
+            case "blue"
+               put "12,12," & tTint into tColour
+               break
+         end switch
+         create graphic ("hs_" & tRow & "_" & v) in group "HeightTools"
+         set the rect of it to x, y, x + 20, y + 16
+         set the backgroundColor of it to tColour
+         set the uThemeSkip of it to true
+         set the tooltip of it to tRow && v
+         add 20 to x
+      end repeat
+      add 17 to y
+   end repeat
+   reset the templateGraphic
+   create graphic "HSel" in group "HeightTools"
+   set the style of it to "rectangle"
+   set the filled of it to false
+   set the lineSize of it to 2
+   set the foregroundColor of it to Theme.Get("accent")
+   set the uThemeSkip of it to true
+   set the rect of it to 593, 93, 615, 111
+   set the visible of group "HeightTools" to false
+end Build.HeightTools
 
 command Build.UseTheme pDir
    local tLib
@@ -164,8 +250,10 @@ function Build.CardScript
          "  if tName begins with " & quote & "b_" & quote & " then Ed.BoardDown tName" & return & \
          "  if tName is " & quote & "OneBit" & quote & " or tName is " & quote & "Ghost" & quote & " then Ed.OneBitDown pButton" & return & \
          "  if tName is " & quote & "Palette" & quote & " then Ed.PaletteDown" & return & \
+         "  if tName is " & quote & "HeightMap" & quote & " then Ed.HDown pButton" & return & \
+         "  if tName begins with " & quote & "hs_" & quote & " then Ed.HSwatch tName" & return & \
          "end mouseDown" & return & \
-         "on mouseMove" & return & "  Ed.BoardMove" & return & "  Ed.MapMove" & return & "  Ed.OneBitMove" & return & "  Ed.GhostMove" & return & "end mouseMove" & return & \
+         "on mouseMove" & return & "  Ed.BoardMove" & return & "  Ed.MapMove" & return & "  Ed.OneBitMove" & return & "  Ed.GhostMove" & return & "  Ed.HMove" & return & "end mouseMove" & return & \
          "on mouseUp" & return & "  Ed.MouseUp" & return & "end mouseUp" & return & \
          "on mouseLeave" & return & "  Ed.GhostMove" & return & "end mouseLeave" & return & \
          "on mouseRelease" & return & "  Ed.MouseUp" & return & "end mouseRelease"

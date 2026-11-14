@@ -19,6 +19,7 @@
 
 local sDir, sMap, sMapPath, sTags, sFont, sFontPath, sCode, sMode, sView, sExtrude
 local sDirtyMap, sDirtyFont, sBoardPaint, sCellPx, sLastCell, sScale1, sOneBitLast, sTab, sGhostOn
+local sHTool, sHLayer, sHValue, sHPx, sHLast, sHBlocks, sHCache
 
 constant kBG = "30,30,34"
 constant kPanel = "42,42,48"
@@ -49,10 +50,19 @@ on Ed.Init
    put "tags" into sView
    put "tag" into sExtrude
    put true into sGhostOn
+   put "floor" into sHTool
+   put "grey" into sHLayer
+   put 100 into sHValue
+   put false into sHBlocks
    -- the palette softer than full white (owner: "that harsh white is too intense"); View menu changes it
    set the blendLevel of image "Palette" to 45
    put CellMap.TagsFromText(CellMap.ReadText(sDir & "/data/tags_default.txt")) into sTags
-   Ed.OpenMap sDir & "/maps/amazing_couple.cellmap"
+   -- the version 2 sample (pool, dais, tower, clouds) when it is there
+   if there is a file (sDir & "/maps/wizard_pool.cellmap") then
+      Ed.OpenMap sDir & "/maps/wizard_pool.cellmap"
+   else
+      Ed.OpenMap sDir & "/maps/amazing_couple.cellmap"
+   end if
    Ed.FillList
    Ed.SelectCode 35
    Ed.ShowTab "1bit"
@@ -65,14 +75,23 @@ end Ed.UseLib
 -------------------------------------------------------------------- files
 
 on Ed.OpenMap pPath
+   local tWas
    put CellMap.Read(pPath) into sMap
+   put sMap["meta"]["version"] into tWas
+   CellMap.Upgrade sMap                    -- a version 1 map is edited (and saved) as version 2
    put pPath into sMapPath
    Ed.LoadFont sMap["meta"]["font"]
    put false into sDirtyMap
    Ed.BuildMapView
    Ed.DrawPalette
    Ed.DrawOneBit
-   Ed.Status "opened" && Ed.ShortName(pPath)
+   put empty into sHCache
+   if sTab is "Heights" then Ed.DrawHeights
+   if tWas < 2 then
+      Ed.Status "opened" && Ed.ShortName(pPath) && "(version 1: saving writes version 2, heights as floors)"
+   else
+      Ed.Status "opened" && Ed.ShortName(pPath)
+   end if
 end Ed.OpenMap
 
 on Ed.LoadFont pName
@@ -309,6 +328,7 @@ on Ed.PaintGlyph pC, pR
    put true into sDirtyMap
    Ed.DrawOneBit
    Ed.PaintCellView pR, pC
+   if sTab is "Heights" then Ed.DrawHeights
 end Ed.PaintGlyph
 
 on Ed.ShowInfo
@@ -493,7 +513,7 @@ on Ed.PaintCellView pR, pC
    put "m_" & pR & "_" & pC into tG
    put sMap["tags"][pR][pC] into tTag
    put sMap["design"][pR][pC] into tCode
-   put sMap["heights"][pR][pC] into tH
+   put CellMap.Get(sMap, "heights", pC, pR) into tH
    switch sView
       case "heights"
          put min(255, 40 + tH * 22) into tColour
@@ -513,7 +533,7 @@ on Ed.PaintCellView pR, pC
    set the textColor of graphic tG to Ed.Contrast(tColour)
    set the tooltip of graphic tG to "col" && pC && "row" && pR & ":" && CellMap.TagInfo(sMap, sTags, tTag, "name") & \
          " (" & CellMap.TagInfo(sMap, sTags, tTag, "effect") & ")" & \
-         "  design" && tCode && "(" & Ed.CharShown(tCode) & ")  height" && tH
+         "  design" && tCode && "(" & Ed.CharShown(tCode) & ")  " & Ed.HeightsOf(pC, pR)
 end Ed.PaintCellView
 
 -- paint the selected code into a cell (sMode: all, design, tag or height)
@@ -585,8 +605,12 @@ end Ed.SetView
 on Ed.Resize pCols, pRows
    local tNew, r, c, tKey
    put CellMap.New(pCols, pRows, sMap["meta"]["name"]) into tNew
-   repeat for each item tKey in "cell,wallH,unitPx,font,tags"
-      put sMap["meta"][tKey] into tNew["meta"][tKey]
+   CellMap.Upgrade tNew
+   repeat for each key tKey in sMap["meta"]
+      if tKey is not among the items of "cols,rows" then put sMap["meta"][tKey] into tNew["meta"][tKey]
+   end repeat
+   repeat for each item tKey in "links,objects,stack"
+      if sMap[tKey] is an array then put sMap[tKey] into tNew[tKey]
    end repeat
    put sMap["tagdefs"] into tNew["tagdefs"]
    put 1 into r
@@ -596,11 +620,15 @@ on Ed.Resize pCols, pRows
          if r <= sMap["meta"]["rows"] and c <= sMap["meta"]["cols"] then
             put sMap["design"][r][c] into tNew["design"][r][c]
             put sMap["tags"][r][c] into tNew["tags"][r][c]
-            put sMap["heights"][r][c] into tNew["heights"][r][c]
+            repeat for each item tKey in "floor,ceiling,red,green,blue"
+               put sMap[tKey][r][c] into tNew[tKey][r][c]
+            end repeat
          else
             put 32 into tNew["design"][r][c]
             put space into tNew["tags"][r][c]
-            put 0 into tNew["heights"][r][c]
+            repeat for each item tKey in "floor,ceiling,red,green,blue"
+               put 0 into tNew[tKey][r][c]
+            end repeat
          end if
          add 1 to c
       end repeat
@@ -610,8 +638,247 @@ on Ed.Resize pCols, pRows
    put true into sDirtyMap
    Ed.BuildMapView
    Ed.DrawOneBit
+   put empty into sHCache
    Ed.ShowTab sTab
 end Ed.Resize
+
+-------------------------------------------------------------------- the Heights view (CELLMAP_V2.md section 8)
+-- The owner (11 14 2026): a colour paint mode toggled like the tabs. Floor tool: every glyph is
+-- drawn in its cell's FLOOR colour on a background of its CEILING colour; Ceiling tool: flipped.
+-- Greys are heights in hu (100 = a full hallway); red digs under the floor, green builds above
+-- the ceiling, blue floats a slab above that. Five numbers a cell; the colours are only a view.
+
+-- grey n on screen: 0 is black, 1 is already visible, 255 is white
+function Ed.GreyShown pN
+   if pN <= 0 then return 0
+   return 40 + round(pN * 215 / 255)
+end Ed.GreyShown
+
+function Ed.TintShown pN
+   return 90 + round(pN * 165 / 255)
+end Ed.TintShown
+
+-- the floor colour of a cell: its grey, or red where a pit is dug (deeper = brighter)
+function Ed.FloorColour pF, pR
+   local g
+   put Ed.GreyShown(pF) into g
+   if pR > 0 then return Ed.TintShown(pR) & comma & (g div 4) & comma & (g div 4)
+   return g & comma & g & comma & g
+end Ed.FloorColour
+
+-- the ceiling colour: its grey; green and blue take their channels where something is built above
+function Ed.CeilColour pC, pG, pB
+   local g, tG, tB
+   put Ed.GreyShown(pC) into g
+   if pG <= 0 and pB <= 0 then return g & comma & g & comma & g
+   put g div 4 into tG
+   put g div 4 into tB
+   if pG > 0 then put Ed.TintShown(pG) into tG
+   if pB > 0 then put Ed.TintShown(pB) into tB
+   return (g div 4) & comma & tG & comma & tB
+end Ed.CeilColour
+
+function Ed.HeightsOf pC, pR
+   return "floor" && sMap["floor"][pR][pC] & "  ceiling" && sMap["ceiling"][pR][pC] & "  red" && sMap["red"][pR][pC] & \
+         "  green" && sMap["green"][pR][pC] & "  blue" && sMap["blue"][pR][pC]
+end Ed.HeightsOf
+
+private function edPixel pRGB
+   return numToByte(0) & numToByte(item 1 of pRGB) & numToByte(item 2 of pRGB) & numToByte(item 3 of pRGB)
+end edPixel
+
+-- one cell's picture: sHPx lines of sHPx pixels (4 bytes each), glyph bits in pFore on pBack
+private function edCellLines pCode, pFore, pBack
+   local tKey, tGlyph, tF, tB, tRows, g, x, tLine, tBits, tOut, y
+   put pCode & "|" & pFore & "|" & pBack & "|" & sHBlocks into tKey
+   if sHCache["cell"][tKey] is an array then return sHCache["cell"][tKey]
+   if sHBlocks then
+      -- blocks: a square of the first colour framed by the second (reads at any zoom)
+      put "0000000000000000" & return & "0000000000000000" into tGlyph
+      repeat 12 times
+         put return & "0011111111111100" after tGlyph
+      end repeat
+      put return & "0000000000000000" & return & "0000000000000000" after tGlyph
+   else
+      put CellMap.Glyph(sFont, pCode) into tGlyph
+   end if
+   put edPixel(pFore) into tF
+   put edPixel(pBack) into tB
+   put 1 into g
+   repeat for each line tBits in tGlyph
+      put empty into tLine
+      put 0 into x
+      repeat while x < sHPx
+         if char (x * 16 div sHPx + 1) of tBits is "1" then
+            put tF after tLine
+         else
+            put tB after tLine
+         end if
+         add 1 to x
+      end repeat
+      put tLine into tRows[g]
+      add 1 to g
+   end repeat
+   put 0 into y
+   repeat while y < sHPx
+      put tRows[y * 16 div sHPx + 1] into tOut[y + 1]
+      add 1 to y
+   end repeat
+   put tOut into sHCache["cell"][tKey]
+   return tOut
+end edCellLines
+
+-- the whole map, every cell in its two colours, as big as fits under the swatches
+on Ed.DrawHeights
+   local tCols, tRows, r, c, y, tData, tFloor, tCeil, tCell, tLine, tLeft, tTop
+   if there is not an image "HeightMap" then exit Ed.DrawHeights
+   if sMap["floor"] is not an array then exit Ed.DrawHeights
+   put sMap["meta"]["cols"] into tCols
+   put sMap["meta"]["rows"] into tRows
+   put max(4, min(566 div tCols, 440 div tRows, 48)) into tCell
+   if tCell is not sHPx then put empty into sHCache["cell"]
+   put tCell into sHPx
+   put 1 into r
+   repeat while r <= tRows
+      put 1 into c
+      repeat while c <= tCols
+         put Ed.FloorColour(sMap["floor"][r][c], sMap["red"][r][c]) into tFloor
+         put Ed.CeilColour(sMap["ceiling"][r][c], sMap["green"][r][c], sMap["blue"][r][c]) into tCeil
+         if sHTool is "ceiling" then
+            put edCellLines(sMap["design"][r][c], tCeil, tFloor) into tLine[c]
+         else
+            put edCellLines(sMap["design"][r][c], tFloor, tCeil) into tLine[c]
+         end if
+         add 1 to c
+      end repeat
+      put 1 into y
+      repeat while y <= sHPx
+         put 1 into c
+         repeat while c <= tCols
+            put tLine[c][y] after tData
+            add 1 to c
+         end repeat
+         add 1 to y
+      end repeat
+      add 1 to r
+   end repeat
+   put the left of graphic "MapFrame" + 4 into tLeft
+   put the top of graphic "MapFrame" + 110 into tTop
+   lock screen
+   set the lockLoc of image "HeightMap" to true
+   set the rect of image "HeightMap" to tLeft, tTop, tLeft + tCols * sHPx, tTop + tRows * sHPx
+   set the imageData of image "HeightMap" to tData
+   unlock screen
+   Ed.HShowTool
+end Ed.DrawHeights
+
+-- Floor or Ceiling: which grey a grey swatch paints, and which colour the glyphs take
+on Ed.HTool pTool
+   if pTool is "blocks" then
+      put not sHBlocks into sHBlocks
+   else
+      put pTool into sHTool
+   end if
+   Ed.DrawHeights
+   Ed.Status "heights:" && Ed.HPainting()
+end Ed.HTool
+
+function Ed.HPainting
+   local tWhat
+   if sHLayer is "grey" then
+      put sHTool && sHValue into tWhat
+      if sHValue is 0 then put " (empty: nothing there)" after tWhat
+      if sHValue is 1 and sHTool is "floor" then put " (a flat plane)" after tWhat
+      if sHValue is 100 and sHTool is "floor" then put " (a full wall)" after tWhat
+      if sHValue is 100 and sHTool is "ceiling" then
+         put " (a standard hallway roof)" after tWhat
+      end if
+   else
+      put sHLayer && sHValue into tWhat
+      if sHLayer is "red" then put " (dug under the floor)" after tWhat
+      if sHLayer is "green" then put " (built above the ceiling, or above the floor with no ceiling)" after tWhat
+      if sHLayer is "blue" then put " (open air, then a floating slab)" after tWhat
+   end if
+   return tWhat
+end Ed.HPainting
+
+on Ed.HShowTool
+   local tName
+   if there is not a button "ToolFloor" then exit Ed.HShowTool
+   set the hilite of button "ToolFloor" to (sHTool is "floor")
+   set the hilite of button "ToolCeiling" to (sHTool is "ceiling")
+   set the hilite of button "ToolBlocks" to sHBlocks
+   put "hs_" & sHLayer & "_" & sHValue into tName
+   if there is a graphic tName then
+      set the rect of graphic "HSel" to the left of graphic tName - 1, the top of graphic tName - 1, the right of graphic tName + 1, the bottom of graphic tName + 1
+      set the visible of graphic "HSel" to true
+   else
+      set the visible of graphic "HSel" to false      -- a picked value between two swatches
+   end if
+   if sHTool is "floor" then
+      put "PAINTING" && toUpper(Ed.HPainting()) & return & "Glyph = floor colour, background = ceiling colour. 100 = a full hallway." into field "HInfo"
+   else
+      put "PAINTING" && toUpper(Ed.HPainting()) & return & "Glyph = ceiling colour, background = floor colour. 0 = no roof." into field "HInfo"
+   end if
+end Ed.HShowTool
+
+-- a swatch: "hs_<grey|red|green|blue>_<value>"
+on Ed.HSwatch pName
+   set the itemDel to "_"
+   put item 2 of pName into sHLayer
+   put item 3 of pName into sHValue
+   set the itemDel to comma
+   Ed.HShowTool
+   Ed.Status "heights:" && Ed.HPainting()
+end Ed.HSwatch
+
+function Ed.HCell
+   local tX, tY
+   if not the visible of image "HeightMap" then return empty
+   put the mouseH - the left of image "HeightMap" into tX
+   put the mouseV - the top of image "HeightMap" into tY
+   if tX < 0 or tY < 0 or tX >= the width of image "HeightMap" or tY >= the height of image "HeightMap" then return empty
+   return (tX div sHPx + 1) & comma & (tY div sHPx + 1)
+end Ed.HCell
+
+-- the layer a click changes: a grey goes to the tool's layer, the colours to their own
+function Ed.HTarget
+   if sHLayer is "grey" then return sHTool
+   return sHLayer
+end Ed.HTarget
+
+on Ed.HDown pButton
+   local tCell
+   put Ed.HCell() into tCell
+   if tCell is empty then exit Ed.HDown
+   if pButton is 3 or the optionKey is down then
+      put sMap[Ed.HTarget()][item 2 of tCell][item 1 of tCell] into sHValue
+      Ed.HShowTool
+      Ed.Status "picked" && Ed.HPainting() && "from col" && item 1 of tCell && "row" && item 2 of tCell
+      exit Ed.HDown
+   end if
+   put tCell into sHLast
+   Ed.HPaint item 1 of tCell, item 2 of tCell
+end Ed.HDown
+
+on Ed.HMove
+   local tCell
+   if sTab is not "Heights" then exit Ed.HMove
+   put Ed.HCell() into tCell
+   if tCell is empty then exit Ed.HMove
+   if sHLast is not empty and the mouse is down and tCell is not sHLast then
+      put tCell into sHLast
+      Ed.HPaint item 1 of tCell, item 2 of tCell
+   end if
+   put "col" && item 1 of tCell && "row" && item 2 of tCell & ":" && Ed.HeightsOf(item 1 of tCell, item 2 of tCell) into line 2 of field "HInfo"
+end Ed.HMove
+
+on Ed.HPaint pC, pR
+   CellMap.Set sMap, Ed.HTarget(), pC, pR, sHValue
+   put true into sDirtyMap
+   Ed.DrawHeights
+   Ed.PaintCellView pR, pC
+end Ed.HPaint
 
 -------------------------------------------------------------------- tabs and menus
 
@@ -621,6 +888,11 @@ on Ed.ShowTab pTab
    lock screen
    set the visible of image "OneBit" to (pTab is "1bit")
    set the visible of group "MapView" to (pTab is "Cells")
+   if there is an image "HeightMap" then
+      set the visible of image "HeightMap" to (pTab is "Heights")
+      set the visible of group "HeightTools" to (pTab is "Heights")
+      if pTab is "Heights" then Ed.DrawHeights
+   end if
    set the visible of field "NotYet" to (pTab is among the items of "Vibe,xt3D")
    if pTab is not "1bit" then
       set the visible of image "Ghost" to false
@@ -675,8 +947,13 @@ on Ed.FileMenu pItem
          ask "Columns and rows (Amazing Couple: 13,13)" with "13,13"
          if it is empty then exit Ed.FileMenu
          put CellMap.New(item 1 of it, item 2 of it, "untitled") into sMap
+         put sFont["meta"]["name"] into sMap["meta"]["font"]
+         CellMap.Upgrade sMap
          put sDir & "/maps/untitled.cellmap" into sMapPath
          Ed.BuildMapView
+         Ed.DrawOneBit
+         put empty into sHCache
+         Ed.ShowTab sTab
          break
       case "Open Map..."
          answer file "Open a cellmap" with (sDir & "/maps") with type "Cellmap|cellmap|"
@@ -787,6 +1064,7 @@ on Ed.TilesMenu pItem
          CellMap.AutoWalls sMap
          put true into sDirtyMap
          Ed.DrawOneBit
+         if sTab is "Heights" then Ed.DrawHeights
          Ed.SetView sView
          Ed.Status "auto walls: the walls are joined line pieces now"
          exit Ed.TilesMenu
@@ -840,13 +1118,41 @@ end Ed.Contrast
 
 -- tests: the state in one line
 function Ed.State
-   return Ed.ShortName(sMapPath) & "|" & sMap["meta"]["cols"] & "x" & sMap["meta"]["rows"] & "|code " & sCode & "|" & sMode & "|" & sView & "|" & sExtrude & "|" & sDirtyMap & "," & sDirtyFont & "|tab " & sTab & "|1bit " & the width of image "OneBit" & "x" & the height of image "OneBit"
+   return Ed.ShortName(sMapPath) & "|" & sMap["meta"]["cols"] & "x" & sMap["meta"]["rows"] & "|code " & sCode & "|" & sMode & "|" & sView & "|" & sExtrude & "|" & sDirtyMap & "," & sDirtyFont & "|tab " & sTab & "|h " & sHTool & "," & sHLayer & "," & sHValue & "," & sHBlocks & "|1bit " & the width of image "OneBit" & "x" & the height of image "OneBit"
 end Ed.State
+
+-- tests: the colours really drawn in one cell of the Heights picture, most first: "r,g,b xN; ..."
+function Ed.HPixels pC, pR
+   local tData, tW, x, y, tAt, tSeen, tKey, tOut
+   put the imageData of image "HeightMap" into tData
+   put the width of image "HeightMap" into tW
+   put (pR - 1) * sHPx into y
+   repeat while y < pR * sHPx
+      put (pC - 1) * sHPx into x
+      repeat while x < pC * sHPx
+         put (y * tW + x) * 4 into tAt
+         add 1 to tSeen[byteToNum(byte tAt + 2 of tData) & comma & byteToNum(byte tAt + 3 of tData) & comma & byteToNum(byte tAt + 4 of tData)]
+         add 1 to x
+      end repeat
+      add 1 to y
+   end repeat
+   repeat for each key tKey in tSeen
+      put tSeen[tKey] & tab & tKey & return after tOut
+   end repeat
+   sort lines of tOut descending numeric by word 1 of each
+   set the itemDel to tab
+   put empty into tData
+   repeat for each line tKey in tOut
+      put item 2 of tKey && "x" & item 1 of tKey & "; " after tData
+   end repeat
+   return char 1 to -3 of tData
+end Ed.HPixels
 
 -- the card script sends these (it sees every click and drag on the board and the map)
 on Ed.MouseUp
    put empty into sBoardPaint
    put empty into sLastCell
    put empty into sOneBitLast
+   put empty into sHLast
    Ed.Status "ok"
 end Ed.MouseUp

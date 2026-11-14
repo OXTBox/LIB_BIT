@@ -64,5 +64,41 @@ send "Ed.ViewMenu " & quote & "Ghost: 70%" & quote to stack "BitEditor"
 put "after View menu: palette " & the blendLevel of image "Palette" of stack "BitEditor" & ", map " & the blendLevel of image "OneBit" of stack "BitEditor" & ", ghost " & the blendLevel of image "Ghost" of stack "BitEditor" & return after tLog
 send "Ed.GhostMove" to stack "BitEditor"
 put "ghost with the mouse away from the map: visible " & the visible of image "Ghost" of stack "BitEditor" & return after tLog
+-- the Heights tab (CELLMAP_V2.md): what the owner will SEE is checked in pixels
+send "Ed.OpenMap " & quote & "//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/maps/wizard_pool.cellmap" & quote to stack "BitEditor"
+put the milliseconds into tT
+send "Ed.ShowTab Heights" to stack "BitEditor"
+put "Heights tab: drawn in " & (the milliseconds - tT) & " ms; image " & the width of image "HeightMap" of stack "BitEditor" & "x" & the height of image "HeightMap" of stack "BitEditor" & ", visible " & the visible of image "HeightMap" of stack "BitEditor" & ", tools visible " & the visible of group "HeightTools" of stack "BitEditor" & ", swatches " & the number of graphics of group "HeightTools" of stack "BitEditor" & return after tLog
+put "floor tool:   " & value("Ed.HPixels(1,1)", stack "BitEditor") && "| yard" && value("Ed.HPixels(12,13)", stack "BitEditor") && "| pool middle" && value("Ed.HPixels(7,13)", stack "BitEditor") && "| maze hall" && value("Ed.HPixels(2,2)", stack "BitEditor") && "| cloud" && value("Ed.HPixels(15,4)", stack "BitEditor") && "| tower wall" && value("Ed.HPixels(19,3)", stack "BitEditor") & return after tLog
+send "Ed.HTool ceiling" to stack "BitEditor"
+put "ceiling tool: " & value("Ed.HPixels(1,1)", stack "BitEditor") && "| yard" && value("Ed.HPixels(12,13)", stack "BitEditor") && "| pool middle" && value("Ed.HPixels(7,13)", stack "BitEditor") && "| maze hall" && value("Ed.HPixels(2,2)", stack "BitEditor") && "| cloud" && value("Ed.HPixels(15,4)", stack "BitEditor") && "| tower wall" && value("Ed.HPixels(19,3)", stack "BitEditor") & return after tLog
+send "Ed.HTool blocks" to stack "BitEditor"
+put "blocks, ceiling tool: " & value("Ed.HPixels(12,13)", stack "BitEditor") & return after tLog
+send "Ed.HTool blocks" to stack "BitEditor"
+send "Ed.HTool floor" to stack "BitEditor"
+send "Ed.HSwatch hs_grey_50" to stack "BitEditor"
+send "Ed.HPaint 12,13" to stack "BitEditor"
+send "Ed.HSwatch hs_red_30" to stack "BitEditor"
+send "Ed.HPaint 13,16" to stack "BitEditor"
+send "Ed.HTool ceiling" to stack "BitEditor"
+send "Ed.HSwatch hs_grey_120" to stack "BitEditor"
+send "Ed.HPaint 12,13" to stack "BitEditor"
+send "Ed.HSwatch hs_blue_200" to stack "BitEditor"
+send "Ed.HPaint 12,13" to stack "BitEditor"
+put "painted 12,13 and 13,16: " & the tooltip of graphic "m_13_12" of stack "BitEditor" & " // " & the tooltip of graphic "m_16_13" of stack "BitEditor" & return after tLog
+put "after painting (ceiling tool): 12,13" && value("Ed.HPixels(12,13)", stack "BitEditor") && "| 13,16" && value("Ed.HPixels(13,16)", stack "BitEditor") & return after tLog
+put "selection box on blue 200: " & the rect of graphic "HSel" of stack "BitEditor" & " = swatch " & the rect of graphic "hs_blue_200" of stack "BitEditor" & return after tLog
+put "info: " & line 1 of field "HInfo" of stack "BitEditor" & return after tLog
+put "state: " & value("Ed.State()", stack "BitEditor") & return after tLog
+send "Ed.SaveMap " & quote & "//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/tests/_test_heights.cellmap" & quote to stack "BitEditor"
+put CellMap.Read("//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/tests/_test_heights.cellmap") into tBack
+put "saved and read back 12,13: floor " & tBack["floor"][13][12] & " ceiling " & tBack["ceiling"][13][12] & " blue " & tBack["blue"][13][12] & "; 13,16 red " & tBack["red"][16][13] & "; version " & tBack["meta"]["version"] & return after tLog
+send "Ed.OpenMap " & quote & "//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/maps/amazing_couple.cellmap" & quote to stack "BitEditor"
+put "v1 map opened: " & field "Status" of stack "BitEditor" & return after tLog
+send "Ed.ShowTab Heights" to stack "BitEditor"
+put "v1 map in Heights: wall " & value("Ed.HPixels(1,1)", stack "BitEditor") & " | floor " & value("Ed.HPixels(2,2)", stack "BitEditor") & return after tLog
+send "Ed.ShowTab 1bit" to stack "BitEditor"
+put "back on 1bit: heights hidden " & (not the visible of image "HeightMap" of stack "BitEditor") & return after tLog
 delete stack "BitEditor"
 return tLog
+

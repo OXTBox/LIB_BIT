@@ -14,7 +14,20 @@ and his notes: `../docs/1BIT_TO_3D_UTILITY.md`.
 | `livecode/lib_cellmap.livecodescript` | the same in LiveCode: a cellmap as a keyed array (pure handlers) |
 | `tests/lc_roundtrip.txt` | LiveCode test: `~/projects/LIB_MCP/tools/lcmcp --standalone run - < tests/lc_roundtrip.txt` |
 
-## A cell: one byte, a tag, a height
+## Version 2 (2026-11-14): read `CELLMAP_V2.md`
+Heights are now five numbers a cell (floor, ceiling, red, green, blue; 100 = a full hallway), with
+links, objects and stacked maps, and one rule set that turns a map into a level for both engines.
+Version 1 files (below) still read; the BitEditor opens them as version 2 and saves version 2.
+- Sample: `maps/wizard_pool.cellmap` (pool, dais, wizard's tower, clouds, a maze corner, a screen
+  of glyphs to walk on); made by `python3 -I python/cellmap.py sample`.
+- **Heights tab** in the BitEditor: Floor / Ceiling tools flip which colour the glyphs take; swatch
+  rows grey, red, green, blue in steps of 10; right-click picks a cell's value; Blocks shows
+  squares instead of glyphs (a floor dot is small: Blocks reads better on open floors).
+- Tests: `python3 -I tests/py_v2_test.py` first (it writes what LiveCode is compared with), then
+  `lcmcp --standalone run - < tests/lc_v2_test.txt` and `... < tests/lc_editor_test.txt`.
+- Walk it in 3D: `LIB_EDITOR/examples/E13_WalkTheMap`.
+
+## A cell: one byte, a tag, a height (version 1)
 - **design** (0-255): which glyph of the map's 1-bit font builds this cell: its wall design. Six
   cells holding "CLAUDE" are built from the glyphs drawn for C, L, A, U, D and E in that font.
 - **tags** (one character): what the cell is in the game, roguelike style (`#` wall, `+` door,
