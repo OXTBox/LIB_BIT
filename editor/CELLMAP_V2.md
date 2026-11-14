@@ -70,9 +70,9 @@ The heroes are about 83 hu tall, so a standard hallway (100) is 20% taller than 
   The slab is solid: clouds over a courtyard, a bridge over a pool. You walk under it and, if
   you can get up there, on it.
 
-Walking (the same rule in both engines, `CellMap.Walk`): every cell offers one or two **levels**
-(the ground; the slab's top). An actor at height y can move onto a level whose top is no more
-than `step` (25 hu) above y, with at least `head` (83 hu) of air above it; it may drop any
+Walking (the same rule in both engines, `CellMap.Walk`): every cell offers up to three **levels**
+(the ground; the roof's top; the slab's top). An actor at height y can move onto a level whose top is no more
+than `step` (30 hu: a 20 step with a raised glyph on it still passes) above y, with at least `head` (83 hu) of air above it; it may drop any
 distance. Then the tag speaks: effects `block` and `locked` stop it whatever the heights say; the
 others (`swim`, `damage`, `goal` ...) are handed to the game.
 
@@ -86,7 +86,7 @@ asks for `heights` gets the floor converted back (`CellMap.Get(map, "heights", c
 The owner (11:40): "maybe make them shorter than the walls, something they can step on, they
 can be walking around a big computer screen laying flat instead of a maze."
 
-Every cell's design glyph is 16 x 16 bits. On a cell that is not a full wall, the lit bits are
+Every cell's design glyph is 16 x 16 bits. On a cell that is not a full wall or a pit, the lit bits are
 raised `relief` hu (default 6: well under a step) above the cell's ground. So the whole map,
 seen from above, is its 1-bit picture: a screen laid flat, its characters embossed, walked on.
 Walls keep their glyph as the editor's picture of them and stand as plain blocks. Codes 32
@@ -102,7 +102,7 @@ cell    76                   engine units a cell
 wallH   62                   engine units for 100 hu (a hero of 52 units x 1.2)
 unitPx  16      font Aquarius      tags tags_default      version 2
 base    0                    this map's zero, hu above the world's
-step 25   head 83   relief 6   slab 10        (all optional; these are the defaults)
+step 30   head 83   relief 6   slab 10        (all optional; these are the defaults)
 [design]  or  [design hex]   as version 1
 [tags]                       as version 1
 [floor]                      one row a line, one number 0-255 a cell, right-aligned in 3, a space between
@@ -164,7 +164,7 @@ How it is built (the rules are the format; any engine can follow them):
 4. **Slabs.** A box outline `slab` hu thick at `top + blue`, edges shared by equal slabs left out.
 5. **Water.** For a dug cell with a water tag: its outline at floor level where the neighbour is
    not the same water, and one diagonal so the sheet reads as a surface.
-6. **Relief.** For each cell under 100 hu whose glyph is not blank: the outline of the lit bits
+6. **Relief.** For each cell under 100 hu, not dug (red 0), whose glyph is not blank: the outline of the lit bits
    (LIB_MAP's block edges on the 16 x 16 grid) at `g + relief`.
 
 ### In Vibecode3D (vector wireframes)

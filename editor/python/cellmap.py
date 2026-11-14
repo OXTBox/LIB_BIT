@@ -14,6 +14,12 @@ The file is plain UTF-8 text in [sections]; LiveCode reads it into a keyed array
     python3 -I cellmap.py show FILE            print a cellmap: tags, design, heights
     python3 -I cellmap.py check FILE           read, write back, compare (round trip)
     python3 -I cellmap.py onebit FILE          the map as its 1-bit picture (half size, in the terminal)
+    python3 -I cellmap.py sample               write maps/wizard_pool.cellmap (version 2: pool, dais, tower, clouds)
+    python3 -I cellmap.py upgrade FILE OUT     a version 1 file as version 2
+    python3 -I cellmap.py segments FILE        the level as line segments (CELLMAP_V2.md section 6)
+    python3 -I cellmap.py heights FILE         floor / ceiling / red / green / blue as a table of rows
+Version 2 (CELLMAP_V2.md): floor, ceiling, red, green, blue 0-255 a cell in height units (100 = a full
+hallway), links, objects, stacked maps; levels(), stand_at(), walk(), level_segments(), level_boxes().
 """
 import colorsys, json, os, sys
 
@@ -229,7 +235,7 @@ def autowall(m, wall_tag='#', full=9):
     rows, cols = m['meta']['rows'], m['meta']['cols']
     pieces = set(AUTO_WALL) | {ord(wall_tag)}
     def tall(r, c):
-        return 0 <= r < rows and 0 <= c < cols and m['heights'][r][c] >= full
+        return 0 <= r < rows and 0 <= c < cols and height1(m, r, c) >= full
     for r in range(rows):
         for c in range(cols):
             if m['tags'][r][c] != wall_tag or m['design'][r][c] not in pieces:
@@ -273,9 +279,21 @@ def printable(code):
     return 32 <= code <= 126 or 161 <= code <= 255
 
 
-def write_map(m, path):
-    out = ['# cellmap 1 - LIB_BIT/editor (format: editor/README.md)', '[map]']
-    out += ['%s\t%s' % (k, v) for k, v in m['meta'].items()]
+META_ORDER = ['name', 'cols', 'rows', 'cell', 'wallH', 'unitPx', 'font', 'tags', 'version']
+LAYERS2 = ['floor', 'ceiling', 'red', 'green', 'blue']
+SECTIONS = ['map', 'design', 'design hex', 'tags', 'heights', 'tagdefs'] + LAYERS2 + ['links', 'objects', 'stack']
+V2_DEFAULTS = dict(base=0, step=30, head=83, relief=6, slab=10)
+
+
+def version(m):
+    return int(m['meta'].get('version', 1))
+
+
+def map_text(m):
+    v = version(m)
+    out = ['# cellmap %d - LIB_BIT/editor (format: editor/%s)' % (v, 'CELLMAP_V2.md' if v >= 2 else 'README.md'), '[map]']
+    keys = [k for k in META_ORDER if k in m['meta']] + sorted(k for k in m['meta'] if k not in META_ORDER)
+    out += ['%s\t%s' % (k, m['meta'][k]) for k in keys]
     if all(printable(c) for row in m['design'] for c in row):
         out.append('[design]')
         out += [''.join(chr(c) for c in row) for row in m['design']]
@@ -284,23 +302,46 @@ def write_map(m, path):
         out += [' '.join('%02X' % c for c in row) for row in m['design']]
     out.append('[tags]')
     out += [''.join(row) for row in m['tags']]
-    out.append('[heights]')
-    out += [''.join(B36[h] for h in row) for row in m['heights']]
+    if v < 2:
+        out.append('[heights]')
+        out += [''.join(B36[h] for h in row) for row in m['heights']]
+    else:
+        for layer in LAYERS2:
+            if layer in ('red', 'green', 'blue') and not any(x for row in m[layer] for x in row):
+                continue                                    # all zeros: left out
+            out.append('[%s]' % layer)
+            out += [' '.join('%3d' % x for x in row) for row in m[layer]]
+        if m.get('links'):
+            out.append('[links]')
+            out += ['\t'.join([k['from'], k['type'], k['to'], k.get('note', '')]) for k in m['links']]
+        if m.get('objects'):
+            out.append('[objects]')
+            out += ['\t'.join([o['id'], o['kind'], o['at'], str(o['facing']), str(o['above']), o.get('props', '')]) for o in m['objects']]
+        if m.get('stack'):
+            out.append('[stack]')
+            out += ['\t'.join([k['file'], str(k['base']), k['at']]) for k in m['stack']]
     if m.get('tagdefs'):
         out.append('[tagdefs]')
         for ch, t in sorted(m['tagdefs'].items()):
             out.append('\t'.join([ch, t['name'], t['colour'], str(t['solid']), str(t['height']), t.get('effect', 'none')]))
-    open(path, 'w', encoding='utf-8', newline='\n').write('\n'.join(out) + '\n')
+    return '\n'.join(out) + '\n'
+
+
+def write_map(m, path):
+    open(path, 'w', encoding='utf-8', newline='\n').write(map_text(m))
 
 
 def read_map(path):
-    m = dict(meta={}, design=[], tags=[], heights=[], tagdefs={})
+    """reads version 1 and version 2 files; a version 1 map stays version 1 (see upgrade)"""
+    m = dict(meta={}, design=[], tags=[], heights=[], tagdefs={}, links=[], objects=[], stack=[])
+    for layer in LAYERS2:
+        m[layer] = []
     sec = None
     for line in open(path, encoding='utf-8'):
-        line = line.rstrip('\n')
+        line = line.rstrip('\n').rstrip('\r')
         if line.startswith('#') and sec in (None, 'map'):       # rows and tag defs may start with '#'
             continue
-        if line.startswith('[') and line.endswith(']') and line[1:-1] in ('map', 'design', 'design hex', 'tags', 'heights', 'tagdefs'):
+        if line.startswith('[') and line.endswith(']') and line[1:-1] in SECTIONS:
             sec = line[1:-1]
             continue
         if sec == 'map' and '\t' in line:
@@ -314,14 +355,446 @@ def read_map(path):
             m['tags'].append(list(line))
         elif sec == 'heights':
             m['heights'].append([B36.index(c) for c in line])
+        elif sec in LAYERS2:
+            m[sec].append([int(x) for x in line.split()])
+        elif sec == 'links' and line:
+            f = (line.split('\t') + ['', '', '', ''])[:4]
+            m['links'].append(dict(zip(('from', 'type', 'to', 'note'), f)))
+        elif sec == 'objects' and line:
+            f = (line.split('\t') + [''] * 6)[:6]
+            m['objects'].append(dict(zip(('id', 'kind', 'at', 'facing', 'above', 'props'), f)))
+        elif sec == 'stack' and line:
+            f = (line.split('\t') + [''] * 3)[:3]
+            m['stack'].append(dict(zip(('file', 'base', 'at'), f)))
         elif sec == 'tagdefs' and line:
             f = line.split('\t')
             m['tagdefs'][f[0]] = dict(name=f[1], colour=f[2], solid=int(f[3]), height=int(f[4]),
                                       effect=f[5] if len(f) > 5 else 'none')
-    cols = m['meta'].get('cols', 0)
-    for layer, pad in (('design', 32), ('tags', ' '), ('heights', 0)):        # short rows (trimmed spaces) padded
+    cols, rows = m['meta'].get('cols', 0), m['meta'].get('rows', 0)
+    pads = [('design', 32), ('tags', ' ')]
+    if version(m) < 2:
+        pads.append(('heights', 0))
+        for layer in LAYERS2:
+            del m[layer]
+    else:
+        del m['heights']
+        pads += [(layer, 0) for layer in LAYERS2]
+    for layer, pad in pads:                                 # short or missing rows filled out
         m[layer] = [row + [pad] * (cols - len(row)) for row in m[layer]]
+        while len(m[layer]) < rows:
+            m[layer].append([pad] * cols)
     return m
+
+
+# ------------------------------------------------------------------ version 2: heights (CELLMAP_V2.md)
+def h1_to_floor(h, tag='.'):
+    """a version 1 height (0-35, 9 = a full wall) as a version 2 floor (hu, 100 = a full wall)"""
+    if h <= 0:
+        return 0 if tag == ' ' else 1
+    return min(255, int(h * 100 / 9 + 0.5))
+
+
+def floor_to_h1(f):
+    if f <= 1:
+        return 0
+    return min(35, max(1, int(f * 9 / 100 + 0.5)))
+
+
+def height1(m, r, c):
+    """the old 0-35 height of a cell (0-based row, col), whatever the map's version"""
+    return m['heights'][r][c] if version(m) < 2 else floor_to_h1(m['floor'][r][c])
+
+
+def upgrade(m):
+    """a version 1 map as version 2, in place: heights become floors; nothing else is built"""
+    if version(m) >= 2:
+        return m
+    rows, cols = m['meta']['rows'], m['meta']['cols']
+    m['floor'] = [[h1_to_floor(m['heights'][r][c], m['tags'][r][c]) for c in range(cols)] for r in range(rows)]
+    for layer in LAYERS2[1:]:
+        m[layer] = [[0] * cols for _ in range(rows)]
+    del m['heights']
+    m['meta']['version'] = 2
+    for k in ('links', 'objects', 'stack'):
+        m.setdefault(k, [])
+    return m
+
+
+def new_map2(cols, rows, **meta):
+    return upgrade(new_map(cols, rows, **meta))
+
+
+def opt(m, key):
+    v = m['meta'].get(key, V2_DEFAULTS[key])
+    return v if isinstance(v, (int, float)) else float(v)
+
+
+def tag_lookup(tags=None):
+    """{char: tag record} from a tag_table() list"""
+    return {t['char']: t for t in (tags or tag_table()) if t['char']}
+
+
+def tag_info(m, tags, ch, key):
+    d = m.get('tagdefs', {}).get(ch)
+    if d and d.get(key) not in (None, ''):
+        return d[key]
+    return tags.get(ch, {}).get(key, 'none' if key == 'effect' else '')
+
+
+def is_water(m, tags, r, c):
+    return m['red'][r][c] > 0 and str(tag_info(m, tags, m['tags'][r][c], 'name')).startswith('water')
+
+
+def column(m, r, c):
+    """a cell's column in hu, or None for empty space / outside:
+    ground, roof bottom, roof top (None, None with no roof), slab bottom, slab top (None, None with no slab)"""
+    if not (0 <= r < m['meta']['rows'] and 0 <= c < m['meta']['cols']):
+        return None
+    f, cl, rd, g, b = (m[k][r][c] for k in LAYERS2)
+    if f <= 0:
+        return None
+    ground = f - rd + (g if cl == 0 else 0)
+    rb, rt = (cl, cl + g) if cl > 0 else (None, None)
+    top = rt if cl > 0 else ground
+    sb, st = (top + b, top + b + opt(m, 'slab')) if b > 0 else (None, None)
+    return ground, rb, rt, sb, st
+
+
+NO_ROOF = 9999
+
+
+def levels(m, r, c):
+    """where an actor can stand in a cell: [(top, air above)] in hu, lowest first"""
+    col = column(m, r, c)
+    if col is None:
+        return []
+    ground, rb, rt, sb, st = col
+    out = []
+    if rb is None:
+        out.append((ground, (sb - ground) if sb is not None else NO_ROOF))
+    else:
+        if rb > ground:
+            out.append((ground, rb - ground))
+        out.append((rt, (sb - rt) if sb is not None else NO_ROOF))
+    if sb is not None:
+        out.append((st, NO_ROOF))
+    return out
+
+
+def has_relief(m, r, c):
+    col = column(m, r, c)
+    if col is None or opt(m, 'relief') <= 0 or m['design'][r][c] in (32, 46):
+        return False
+    return m['red'][r][c] == 0 and col[0] < 100 and (col[1] is None or col[1] > col[0])
+
+
+def cell_x(m, col):
+    """engine x of the centre of column col (1-based, decimals allowed)"""
+    return (col - 0.5 - m['meta']['cols'] / 2) * m['meta']['cell']
+
+
+def cell_z(m, row):
+    return (row - 0.5 - m['meta']['rows'] / 2) * m['meta']['cell']
+
+
+def cell_at(m, x, z):
+    """(col, row), 1-based, of an engine point (may be outside the map)"""
+    import math
+    return (math.floor(x / m['meta']['cell'] + m['meta']['cols'] / 2) + 1,
+            math.floor(z / m['meta']['cell'] + m['meta']['rows'] / 2) + 1)
+
+
+def hu(m):
+    return m['meta']['wallH'] / 100.0
+
+
+def stand_at(m, tags, font, x, z, y):
+    """the height (engine units) an actor now at height y would stand at on point x,z; None = cannot.
+    Blocked by: outside, empty space, a tag whose effect is block or locked, a rise over `step`,
+    less than `head` of air."""
+    import math
+    col, row = cell_at(m, x, z)
+    r, c = row - 1, col - 1
+    lv = levels(m, r, c)
+    if not lv or tag_info(m, tags, m['tags'][r][c], 'effect') in ('block', 'locked'):
+        return None
+    yh = y / hu(m) - opt(m, 'base')
+    best = None
+    for i, (top, air) in enumerate(lv):
+        if i == 0 and font is not None and has_relief(m, r, c):
+            px = min(15, int((x / m['meta']['cell'] + m['meta']['cols'] / 2 - c) * 16))
+            pz = min(15, int((z / m['meta']['cell'] + m['meta']['rows'] / 2 - r) * 16))
+            if font['glyph'].get(m['design'][r][c], [0] * 16)[pz] >> px & 1:
+                top += opt(m, 'relief')
+                air -= opt(m, 'relief')
+        if top <= yh + opt(m, 'step') + 1e-6 and air >= opt(m, 'head'):
+            best = top
+    return None if best is None else (best + opt(m, 'base')) * hu(m)
+
+
+def ground_at(m, tags, font, x, z, y=1e9):
+    """the highest standing height at x,z at or below y (engine units); None over empty space"""
+    return stand_at(m, tags, font, x, z, y)
+
+
+def walk(m, tags, font, x, z, y, dx, dz, radius=12):
+    """move an actor (a circle) by dx,dz, sliding along what blocks it: (x, z, y, effect of the cell it is in)"""
+    def fits(nx, nz):
+        for ax in (-radius, radius):
+            for az in (-radius, radius):
+                if stand_at(m, tags, font, nx + ax, nz + az, y) is None:
+                    return None
+        return stand_at(m, tags, font, nx, nz, y)
+    for tx, tz in ((dx, dz), (dx, 0), (0, dz)):
+        ny = fits(x + tx, z + tz)
+        if ny is not None and (tx or tz):
+            x, z, y = x + tx, z + tz, ny
+            break
+    col, row = cell_at(m, x, z)
+    return x, z, y, tag_info(m, tags, m['tags'][row - 1][col - 1], 'effect')
+
+
+# ------------------------------------------------------------------ version 2: the level as line segments
+def glyph_edges(rows16):
+    """the outline of a glyph's lit bits as merged runs: [(x1, z1, x2, z2)] in pixels 0-16"""
+    def lit(z, x):
+        return 0 <= z < 16 and 0 <= x < 16 and (rows16[z] >> x & 1) == 1
+    out = []
+    for k in range(17):                     # boundaries above pixel row k, then left of pixel column k
+        start = None
+        for x in range(17):
+            on = x < 16 and lit(k - 1, x) != lit(k, x)
+            if on and start is None:
+                start = x
+            if not on and start is not None:
+                out.append((start, k, x, k))
+                start = None
+    for k in range(17):
+        start = None
+        for z in range(17):
+            on = z < 16 and lit(z, k - 1) != lit(z, k)
+            if on and start is None:
+                start = z
+            if not on and start is not None:
+                out.append((k, start, k, z))
+                start = None
+    return out
+
+
+def level_segments(m, tags=None, font=None):
+    """the map as line segments 'x1,y1,z1,x2,y2,z2,class': x and z in sixteenths of a cell from the
+    map's north-west corner (x east, z south), y in hu (up). Rules: CELLMAP_V2.md section 6.
+    Sorted; runs along a row or column are merged. Scale with seg_to_engine()."""
+    tags = tags or tag_lookup()
+    rows, cols = m['meta']['rows'], m['meta']['cols']
+    slab, relief = opt(m, 'slab'), opt(m, 'relief')
+    flat = {}                               # (class, y, axis, fixed) -> [(a, b)]
+    ups = set()
+    C = [[column(m, r, c) for c in range(cols)] for r in range(rows)]
+
+    def col_at(r, c):
+        return C[r][c] if 0 <= r < rows and 0 <= c < cols else None
+
+    def edge(cls, y, r, c, side):           # one side of cell r,c at height y
+        if side == 'n':
+            flat.setdefault((cls, y, 'x', r * 16), []).append((c * 16, c * 16 + 16))
+        elif side == 's':
+            flat.setdefault((cls, y, 'x', r * 16 + 16), []).append((c * 16, c * 16 + 16))
+        elif side == 'w':
+            flat.setdefault((cls, y, 'z', c * 16), []).append((r * 16, r * 16 + 16))
+        else:
+            flat.setdefault((cls, y, 'z', c * 16 + 16), []).append((r * 16, r * 16 + 16))
+
+    def base_class(r, c):
+        if m['red'][r][c] > 0:
+            return 'pit'
+        if m['green'][r][c] > 0 and m['ceiling'][r][c] == 0:
+            return 'green'
+        return 'wall'
+
+    sides = (('n', -1, 0), ('e', 0, 1), ('s', 1, 0), ('w', 0, -1))
+    for r in range(rows):
+        for c in range(cols):
+            col = C[r][c]
+            if col is None:
+                continue
+            ground, rb, rt, sb, st = col
+            water = is_water(m, tags, r, c)
+            for side, dr, dc in sides:
+                n = col_at(r + dr, c + dc)
+                edge('floor' if n is not None and n[0] == ground else base_class(r, c), ground, r, c, side)
+                if rb is not None:
+                    edge('ceiling', rb, r, c, side)
+                    if rt != rb:
+                        edge('green', rt, r, c, side)
+                if sb is not None and not (n is not None and n[3] == sb):
+                    edge('sky', sb, r, c, side)
+                    edge('sky', st, r, c, side)
+                if water:
+                    f = m['floor'][r][c]
+                    nr, nc = r + dr, c + dc
+                    if not (n is not None and is_water(m, tags, nr, nc) and m['floor'][nr][nc] == f):
+                        edge('water', f, r, c, side)
+            if water:
+                f = m['floor'][r][c]
+                ups.add('%d,%d,%d,%d,%d,%d,water' % (c * 16, f, r * 16, c * 16 + 16, f, r * 16 + 16))
+            if font is not None and has_relief(m, r, c):
+                y = ground + relief
+                for x1, z1, x2, z2 in glyph_edges(font['glyph'].get(m['design'][r][c], [0] * 16)):
+                    if z1 == z2:
+                        flat.setdefault(('relief', y, 'x', r * 16 + z1), []).append((c * 16 + x1, c * 16 + x2))
+                    else:
+                        flat.setdefault(('relief', y, 'z', c * 16 + x1), []).append((r * 16 + z1, r * 16 + z2))
+    # uprights: one a corner
+    for j in range(rows + 1):
+        for i in range(cols + 1):
+            cells = [(j - 1, i - 1), (j - 1, i), (j, i - 1), (j, i)]
+            around = [col_at(r, c) for r, c in cells]
+            if all(a is None for a in around):
+                continue
+            gs = [a[0] if a is not None else 0 for a in around]
+            lo, hi = min(gs), max(gs)
+            if hi - lo > 1:
+                live = [(r, c) for (r, c), a in zip(cells, around) if a is not None]
+                cls = 'pit' if any(m['red'][r][c] > 0 for r, c in live) else \
+                      'green' if any(m['green'][r][c] > 0 and m['ceiling'][r][c] == 0 for r, c in live) else 'wall'
+                ups.add('%d,%d,%d,%d,%d,%d,%s' % (i * 16, lo, j * 16, i * 16, hi, j * 16, cls))
+            roofs = [a for a in around if a is not None and a[1] is not None]
+            if roofs:
+                lo, hi = min(a[1] for a in roofs), max(a[2] for a in roofs)
+                if hi > lo:
+                    cls = 'green' if any(a[2] > a[1] for a in roofs) else 'ceiling'
+                    ups.add('%d,%d,%d,%d,%d,%d,%s' % (i * 16, lo, j * 16, i * 16, hi, j * 16, cls))
+            sbs = [a[3] if a is not None else None for a in around]
+            if len(set(sbs)) > 1:
+                for s in sorted(set(x for x in sbs if x is not None)):
+                    ups.add('%d,%d,%d,%d,%d,%d,sky' % (i * 16, s, j * 16, i * 16, s + slab, j * 16))
+    out = set(ups)
+    for (cls, y, axis, fixed), runs in flat.items():
+        runs = sorted(set(runs))
+        a, b = runs[0]
+        merged = []
+        for a2, b2 in runs[1:]:
+            if a2 <= b:
+                b = max(b, b2)
+            else:
+                merged.append((a, b))
+                a, b = a2, b2
+        merged.append((a, b))
+        for a, b in merged:
+            if axis == 'x':
+                out.add('%d,%d,%d,%d,%d,%d,%s' % (a, y, fixed, b, y, fixed, cls))
+            else:
+                out.add('%d,%d,%d,%d,%d,%d,%s' % (fixed, y, a, fixed, y, b, cls))
+    return sorted(out)
+
+
+def seg_to_engine(m, seg):
+    """a level segment in engine units, map centred on 0,0, y up: (x1, y1, z1, x2, y2, z2, class)"""
+    f = seg.split(',')
+    cell, k = m['meta']['cell'], hu(m)
+    def X(v): return (int(v) / 16 - m['meta']['cols'] / 2) * cell
+    def Z(v): return (int(v) / 16 - m['meta']['rows'] / 2) * cell
+    def Y(v): return (int(v) + opt(m, 'base')) * k
+    return X(f[0]), Y(f[1]), Z(f[2]), X(f[3]), Y(f[4]), Z(f[5]), f[6]
+
+
+def level_boxes(m, tags=None):
+    """the solid look (xt3d): one box a column part, engine units, y up, centre + size:
+    (x, y, z, width, height, depth, class); class ground / roof / slab / water"""
+    tags = tags or tag_lookup()
+    k, cell, out = hu(m), m['meta']['cell'], []
+    deep = min([0] + [column(m, r, c)[0] for r in range(m['meta']['rows']) for c in range(m['meta']['cols'])
+                      if column(m, r, c) is not None]) - 10
+    for r in range(m['meta']['rows']):
+        for c in range(m['meta']['cols']):
+            col = column(m, r, c)
+            if col is None:
+                continue
+            ground, rb, rt, sb, st = col
+            x, z = cell_x(m, c + 1), cell_z(m, r + 1)
+            def box(lo, hi, cls):
+                out.append((x, (lo + hi) / 2 * k, z, cell, (hi - lo) * k, cell, cls))
+            box(deep, ground, 'ground')
+            if rb is not None:
+                box(rb, max(rt, rb + 1), 'roof')
+            if sb is not None:
+                box(sb, st, 'slab')
+            if is_water(m, tags, r, c):
+                box(ground, m['floor'][r][c], 'water')
+    return out
+
+
+# ------------------------------------------------------------------ the version 2 sample (the owner, 11 14 2026)
+def sample():
+    """'a map with a swimming pool, a raised dais, a wizard's tower and some clouds', a maze corner,
+    and a screen of glyphs laid flat to walk on: maps/wizard_pool.cellmap"""
+    cols, rows = 24, 18
+    m = new_map2(cols, rows, name='wizard_pool', cell=76, wallH=62, font='Aquarius')
+    def put(c, r, tag=None, design=None, **layers):         # 1-based col, row
+        if tag is not None:
+            m['tags'][r - 1][c - 1] = tag
+            m['design'][r - 1][c - 1] = ord(tag) if design is None else design
+        elif design is not None:
+            m['design'][r - 1][c - 1] = design
+        for k, v in layers.items():
+            m[k][r - 1][c - 1] = v
+    # the courtyard wall
+    for c in range(1, cols + 1):
+        for r in range(1, rows + 1):
+            if c in (1, cols) or r in (1, rows):
+                put(c, r, '#', floor=100)
+    # the maze corner, north-west: roofed hallways (ceiling 100), one way out to the yard
+    grid = maze(4, 3, 7)
+    grid[5] = grid[5][:8] + '0'
+    for j, line in enumerate(grid):
+        for i, ch in enumerate(line):
+            if ch == '1':
+                put(1 + i, 1 + j, '#', floor=100)
+            else:
+                put(1 + i, 1 + j, '~', design=46, floor=1, ceiling=100)
+    # the swimming pool, south-west: steps of 20 down to 60; shallow water round the edge, deep in the middle
+    for c in range(4, 11):
+        for r in range(11, 17):
+            ring = min(c - 4, 10 - c, r - 11, 16 - r)
+            put(c, r, 'w' if ring == 0 else '}', design=ord('~'), floor=1, red=20 * (ring + 1))
+    # the raised dais, south: a ring one step up, a platform two steps up, the goal on top
+    for c in range(13, 18):
+        for r in range(11, 16):
+            ring = min(c - 13, 17 - c, r - 11, 15 - r)
+            put(c, r, '.', design=ord('=') if ring == 0 else ord('#'), floor=21 if ring == 0 else 41)
+    put(15, 13, 'X', floor=41)
+    # the wizard's tower, north-east: walls 255 + green 200 (455 hu), a room under a thick roof, a door
+    for c in range(19, 23):
+        for r in range(3, 7):
+            if c in (19, 22) or r in (3, 6):
+                put(c, r, '#', floor=255, green=200)
+            else:
+                put(c, r, '.', floor=1, ceiling=255, green=200)
+    put(20, 6, "'", floor=1, ceiling=100, green=355)
+    put(21, 4, 'T', floor=1, ceiling=255, green=200)        # the wizard's teleporter: up to the clouds
+    put(20, 4, '*', floor=1, ceiling=255, green=200)
+    # the clouds, north: slabs floating 220 hu over the yard; the middle one is where the teleporter lands
+    for c, r in ((12, 2), (13, 2), (14, 2), (13, 3), (14, 3), (15, 3), (16, 3), (14, 4), (15, 4), (16, 4), (17, 4), (15, 5), (16, 5)):
+        put(c, r, blue=220)
+    put(10, 9, blue=180)
+    put(11, 9, blue=180)
+    # the screen laid flat: glyphs raised in low relief, something to step on
+    for j, text in enumerate(('PROMPT &', ' GLAZE  ', 'WALK ME!')):
+        for i, ch in enumerate(text):
+            if ch != ' ':
+                put(11 + i, 6 + j, design=ord(ch))
+    for i, code in enumerate((222, 172, 172, 220, 172, 172, 172, 206)):
+        put(11 + i, 9, design=code) if i not in (0, 1) else None
+    # who starts where
+    put(12, 10, '@', design=46)
+    put(13, 10, 'N', design=46)
+    put(18, 9, 'o', design=46)
+    m['links'] = [dict({'from': '21,4', 'type': 'teleport', 'to': '15,4', 'note': 'the wizard sends you up to the clouds'}),
+                  dict({'from': '15,13', 'type': 'pad', 'to': '20,6', 'note': 'standing on the dais is noticed at the tower door'})]
+    m['objects'] = [dict(id='orb1', kind='ball', at='18,9', facing=0, above=0, props='sides=16'),
+                    dict(id='beacon', kind='beacon', at='15,13', facing=0, above=0, props='colour=#FFD040')]
+    return autowall(m, full=9)
 
 
 # ------------------------------------------------------------------ LIB_BIT's maze (same numbers as Bit.Maze)
@@ -381,8 +854,10 @@ def show(m):
           m['meta'].get('rows'), m['meta'].get('cell'), m['meta'].get('wallH'), m['meta'].get('font')))
     names = {t['char']: t['name'] for t in tag_table() if t['char']}
     print('\ntags               design             heights')
-    for t, d, h in zip(m['tags'], m['design'], m['heights']):
-        print(''.join(t).ljust(19) + ''.join(chr(c) if printable(c) else '?' for c in d).ljust(19) + ''.join(B36[x] for x in h))
+    w = m['meta'].get('cols', 13) + 6
+    for r, (t, d) in enumerate(zip(m['tags'], m['design'])):
+        print(''.join(t).ljust(w) + ''.join(chr(c) if printable(c) else '?' for c in d).ljust(w) +
+              ''.join(B36[height1(m, r, c)] for c in range(len(t))))
     used = sorted({c for row in m['tags'] for c in row})
     print('\nlegend: ' + ',  '.join('%s %s' % (c, names.get(c, '?')) for c in used))
 
@@ -405,14 +880,26 @@ def main(argv):
         font = read_font(os.path.join(ROOT, 'fonts', m['meta']['font'] + '.font.txt'))
         for row in onebit_rows(m, font)[::2]:
             print(row[::2].replace('0', ' ').replace('1', '#'))
+    elif cmd == 'sample':
+        p = os.path.join(ROOT, 'maps', 'wizard_pool.cellmap')
+        write_map(sample(), p)
+        print('wrote', p)
+    elif cmd == 'upgrade':
+        write_map(upgrade(read_map(argv[2])), argv[3])
+        print('wrote', argv[3])
+    elif cmd == 'segments':
+        m = upgrade(read_map(argv[2]))
+        font = read_font(os.path.join(ROOT, 'fonts', m['meta']['font'] + '.font.txt'))
+        print('\n'.join(level_segments(m, tag_lookup(), font)))
+    elif cmd == 'heights':
+        m = upgrade(read_map(argv[2]))
+        for layer in LAYERS2:
+            print('[%s]' % layer)
+            print('\n'.join(' '.join('%3d' % x for x in row) for row in m[layer]))
     elif cmd == 'show':
         show(read_map(argv[2]))
     elif cmd == 'check':
-        a = read_map(argv[2])
-        tmp = argv[2] + '.check'
-        write_map(a, tmp)
-        same = open(tmp, encoding='utf-8').read() == open(argv[2], encoding='utf-8').read()
-        os.remove(tmp)
+        same = map_text(read_map(argv[2])) == open(argv[2], encoding='utf-8').read()
         print('round trip:', 'SAME' if same else 'DIFFERENT')
         return 0 if same else 1
     else:
