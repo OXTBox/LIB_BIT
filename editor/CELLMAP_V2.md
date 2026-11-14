@@ -23,6 +23,8 @@ section 9. Version 1 is described in `README.md`; every v1 file still reads.
 
 ## 2. The decision: five numbers a cell, not one colour
 
+**Confirmed by the owner, 2026-11-14:** "your five numbers in cell sounds fine".
+
 The owner's note describes heights as colours: grey for the base floor and ceiling, red going
 down under the floor, green above the ceiling, blue above that. One colour cannot hold all of
 it: a grey IS red = green = blue, so a pixel that is "grey 100 with red 40" is no longer a grey,
