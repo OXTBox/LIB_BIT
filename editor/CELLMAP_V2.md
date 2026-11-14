@@ -204,6 +204,9 @@ A **Heights** tab beside 1bit and Cells: the map's glyphs in two colours a cell.
   is black); a cell with red shows its floor in red (deeper = brighter); with green or blue its
   ceiling colour takes those channels.
 - Right-click picks up a cell's value for the layer being painted.
+- The view always opens showing the glyphs (the owner, 2026-11-14: "so the user doesn't get lost
+  between general design and detail design"). Blocks (squares instead of glyphs) is an optional
+  button, never the default.
 
 ## 9. Status (2026-11-14)
 | Part | State |
