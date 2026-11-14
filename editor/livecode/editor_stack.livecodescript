@@ -8,12 +8,15 @@
 ##
 ## LEFT    the 256 codes in their tag colours; Filter narrows the list; click = select
 ## MIDDLE  the drawing board (click or drag to flip bits); quick functions under it
-## RIGHT   1bit / Vibe / xt3D tabs; 1bit = the map: click or drag paints, right-click picks
+## LEFT    the glyph palette: all 256 glyphs of the map's font (Aquarius by default); click = select
+## RIGHT   1bit / Cells / Vibe / xt3D tabs. 1bit = the whole map as ONE 1-bit picture of its
+##         glyphs (owner, 11 14 2026): click or drag paints the selected glyph (design only),
+##         right-click picks. Cells = the coloured cell grid (tags, design, heights views).
 ## MENUS   File  Bit  Grid  Mesh  Scene  Tiles
 ######################################################################################
 
 local sDir, sMap, sMapPath, sTags, sFont, sFontPath, sCode, sMode, sView, sExtrude
-local sDirtyMap, sDirtyFont, sBoardPaint, sCellPx, sLastCell
+local sDirtyMap, sDirtyFont, sBoardPaint, sCellPx, sLastCell, sScale1, sOneBitLast, sTab
 
 constant kBG = "30,30,34"
 constant kPanel = "42,42,48"
@@ -62,6 +65,8 @@ on Ed.OpenMap pPath
    Ed.LoadFont sMap["meta"]["font"]
    put false into sDirtyMap
    Ed.BuildMapView
+   Ed.DrawPalette
+   Ed.DrawOneBit
    Ed.Status "opened" && Ed.ShortName(pPath)
 end Ed.OpenMap
 
@@ -137,7 +142,99 @@ on Ed.SelectCode pCode
    put pCode into sCode
    Ed.DrawGlyph
    Ed.ShowInfo
+   Ed.PalSelect
 end Ed.SelectCode
+
+-------------------------------------------------------------------- the glyph palette (left, top)
+
+-- all 256 glyphs as one 1-bit picture, 16 a row, light on dark (codes 0-15 on the top row)
+on Ed.DrawPalette
+   local tPal, r, c
+   put 16 into tPal["meta"]["cols"]
+   put 16 into tPal["meta"]["rows"]
+   put 1 into r
+   repeat while r <= 16
+      put 1 into c
+      repeat while c <= 16
+         put (r - 1) * 16 + (c - 1) into tPal["design"][r][c]
+         add 1 to c
+      end repeat
+      add 1 to r
+   end repeat
+   lock screen
+   set the text of image "Palette" to Bit.ToPBM(CellMap.OneBitGrid(tPal, sFont, 1, true))
+   set the rect of image "Palette" to 8, 34, 264, 290
+   Ed.PalSelect
+   unlock screen
+end Ed.DrawPalette
+
+on Ed.PalSelect
+   local tL, tT
+   if there is not a graphic "PalSel" then exit Ed.PalSelect
+   put the left of image "Palette" + (sCode mod 16) * 16 into tL
+   put the top of image "Palette" + (sCode div 16) * 16 into tT
+   set the rect of graphic "PalSel" to tL - 1, tT - 1, tL + 17, tT + 17
+end Ed.PalSelect
+
+on Ed.PaletteDown
+   local tX, tY
+   put the mouseH - the left of image "Palette" into tX
+   put the mouseV - the top of image "Palette" into tY
+   if tX < 0 or tY < 0 or tX >= 256 or tY >= 256 then exit Ed.PaletteDown
+   Ed.SelectCode (tY div 16) * 16 + (tX div 16)
+   Ed.Status "glyph" && sCode && "(" & Ed.CharShown(sCode) & ")" && sTags[sCode]["name"]
+end Ed.PaletteDown
+
+-------------------------------------------------------------------- the 1bit view (right): one big picture
+
+-- the whole map as one 1-bit picture of its design glyphs, as big as fits
+on Ed.DrawOneBit
+   local tW, tH
+   if there is not an image "OneBit" then exit Ed.DrawOneBit
+   put sMap["meta"]["cols"] * 16 into tW
+   put sMap["meta"]["rows"] * 16 into tH
+   put max(1, min(566 div tW, 546 div tH)) into sScale1
+   lock screen
+   set the text of image "OneBit" to Bit.ToPBM(CellMap.OneBitGrid(sMap, sFont, sScale1, true))
+   set the rect of image "OneBit" to 594, 64, 594 + tW * sScale1, 64 + tH * sScale1
+   unlock screen
+end Ed.DrawOneBit
+
+-- click: paint the selected glyph into the cell (design only); right-click: pick its glyph
+on Ed.OneBitDown pButton
+   local tCell
+   put Ed.OneBitCell() into tCell
+   if tCell is empty then exit Ed.OneBitDown
+   if pButton is 3 or the optionKey is down then
+      Ed.SelectCode sMap["design"][item 2 of tCell][item 1 of tCell]
+      Ed.Status "picked glyph" && sCode && "from col" && item 1 of tCell && "row" && item 2 of tCell
+      exit Ed.OneBitDown
+   end if
+   put tCell into sOneBitLast
+   Ed.PaintGlyph item 1 of tCell, item 2 of tCell
+end Ed.OneBitDown
+
+on Ed.OneBitMove
+   local tCell
+   if sOneBitLast is empty or the mouse is up then exit Ed.OneBitMove
+   put Ed.OneBitCell() into tCell
+   if tCell is not empty and tCell is not sOneBitLast then
+      put tCell into sOneBitLast
+      Ed.PaintGlyph item 1 of tCell, item 2 of tCell
+   end if
+end Ed.OneBitMove
+
+function Ed.OneBitCell
+   if not the visible of image "OneBit" then return empty
+   return CellMap.CellAtPixel(sMap, sScale1, the mouseH - the left of image "OneBit", the mouseV - the top of image "OneBit")
+end Ed.OneBitCell
+
+on Ed.PaintGlyph pC, pR
+   CellMap.Set sMap, "design", pC, pR, sCode
+   put true into sDirtyMap
+   Ed.DrawOneBit
+   Ed.PaintCellView pR, pC
+end Ed.PaintGlyph
 
 on Ed.ShowInfo
    local t
@@ -197,6 +294,8 @@ end Ed.SetBit
 on Ed.SetGlyph pGrid
    put CellMap.GlyphToRows(pGrid) into sFont[sCode]
    put true into sDirtyFont
+   Ed.DrawPalette          -- the palette and the map show the change at once
+   Ed.DrawOneBit
 end Ed.SetGlyph
 
 on Ed.BoardDown pName
@@ -355,6 +454,7 @@ on Ed.PaintCell pR, pC
    if sMode is "all" or sMode is "height" then CellMap.Set sMap, "heights", pC, pR, tH
    put true into sDirtyMap
    Ed.PaintCellView pR, pC
+   Ed.DrawOneBit
 end Ed.PaintCell
 
 on Ed.MapDown pName, pButton
@@ -433,15 +533,20 @@ on Ed.Resize pCols, pRows
    put tNew into sMap
    put true into sDirtyMap
    Ed.BuildMapView
+   Ed.DrawOneBit
+   Ed.ShowTab sTab
 end Ed.Resize
 
 -------------------------------------------------------------------- tabs and menus
 
 on Ed.ShowTab pTab
+   if pTab is empty then put "1bit" into pTab
+   put pTab into sTab
    lock screen
-   set the visible of group "MapView" to (pTab is "1bit")
-   set the visible of field "NotYet" to (pTab is not "1bit")
-   if pTab is not "1bit" then put pTab && "viewport: not connected yet." & return & return & \
+   set the visible of image "OneBit" to (pTab is "1bit")
+   set the visible of group "MapView" to (pTab is "Cells")
+   set the visible of field "NotYet" to (pTab is among the items of "Vibe,xt3D")
+   if pTab is among the items of "Vibe,xt3D" then put pTab && "viewport: not connected yet." & return & return & \
          "The editor stays separate from the Vibecode3D and xt3d main stacks until the owner says so" && \
          "(11 14 2026). The map is saved as a plain .cellmap file that both engines will read." into field "NotYet"
    unlock screen
@@ -538,6 +643,8 @@ on Ed.GridMenu pItem
          put it into sMap["meta"]["font"]
          Ed.LoadFont it
          Ed.DrawGlyph
+         Ed.DrawPalette
+         Ed.DrawOneBit
          break
    end switch
    put true into sDirtyMap
@@ -592,6 +699,14 @@ on Ed.TilesMenu pItem
       case "View Heights"
          Ed.SetView "heights"
          exit Ed.TilesMenu
+      case "Auto Walls"
+         -- every plain # wall takes the Aquarius line piece that joins its neighbours
+         CellMap.AutoWalls sMap
+         put true into sDirtyMap
+         Ed.DrawOneBit
+         Ed.SetView sView
+         Ed.Status "auto walls: the walls are joined line pieces now"
+         exit Ed.TilesMenu
       case "Tag Colour..."
          answer color with Ed.RGB(sTags[sCode]["colour"])
          if it is empty then exit Ed.TilesMenu
@@ -642,12 +757,13 @@ end Ed.Contrast
 
 -- tests: the state in one line
 function Ed.State
-   return Ed.ShortName(sMapPath) & "|" & sMap["meta"]["cols"] & "x" & sMap["meta"]["rows"] & "|code " & sCode & "|" & sMode & "|" & sView & "|" & sExtrude & "|" & sDirtyMap & "," & sDirtyFont
+   return Ed.ShortName(sMapPath) & "|" & sMap["meta"]["cols"] & "x" & sMap["meta"]["rows"] & "|code " & sCode & "|" & sMode & "|" & sView & "|" & sExtrude & "|" & sDirtyMap & "," & sDirtyFont & "|tab " & sTab & "|1bit " & the width of image "OneBit" & "x" & the height of image "OneBit"
 end Ed.State
 
 -- the card script sends these (it sees every click and drag on the board and the map)
 on Ed.MouseUp
    put empty into sBoardPaint
    put empty into sLastCell
+   put empty into sOneBitLast
    Ed.Status "ok"
 end Ed.MouseUp

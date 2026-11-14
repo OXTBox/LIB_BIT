@@ -43,6 +43,15 @@ font	Base_001    tags	tags_default     version	1
 In LiveCode: `tMap["meta"][key]`, `tMap["design"|"tags"|"heights"][row][col]`, `tMap["tagdefs"][char][...]`.
 In Python: the same names in a dict of lists. Both write the identical file (tested).
 
+## Fonts
+- **Aquarius** (default): the Mattel Aquarius character set at 16 x 16 (AquaDouble, from the
+  owner's BitFontMaker stack). Codes 128-255 hold line pieces (corners, tees, crosses), quarter
+  blocks and a solid block (255): walls draw as joined lines.
+- Base_001 (256 pattern tiles), 24_Seniors_Sigils. Any BitFontMaker2 .json in fonts/ converts with
+  `python3 -I python/cellmap.py fonts`.
+- **Auto walls** (Tiles menu, `CellMap.AutoWalls`, `cellmap.autowall`): every plain `#` wall takes
+  the line piece that joins its full-height neighbours; hand-drawn designs (letters) stay.
+
 ## The editor stack
 Open `BitEditor.livecode` (keep it in this folder: it finds the libraries and data next to it).
 It opens `maps/amazing_couple.cellmap`.
@@ -50,8 +59,12 @@ It opens `maps/amazing_couple.cellmap`.
 - **Middle:** the selected code's 16 x 16 glyph: click or drag to flip bits; the quick functions
   under it (flip, rotate, invert, shift) work on the whole glyph. The panel shows the tag and its
   **effect** (what the cell does). File > Save Font keeps glyph changes.
-- **Right:** the 1bit tab is the map: click or drag paints the selected code (design, tag and
-  height at once; Tiles > Paint ... Only for one layer); right-click (or Option-click) picks a
+- **Top left:** the glyph palette: all 256 glyphs of the map's font in one 1-bit picture; click one.
+- **Right, 1bit tab:** the whole map as ONE 1-bit picture made of its glyphs, light on dark:
+  click or drag paints the selected glyph into cells (design only); right-click picks a glyph.
+  `python3 -I python/cellmap.py onebit maps/amazing_couple.cellmap` shows it in a terminal.
+- **Right, Cells tab:** the coloured cell grid: click or drag paints the selected code (design, tag
+  and height at once; Tiles > Paint ... Only for one layer); right-click (or Option-click) picks a
   cell's code. Tiles > View Tags / Design / Heights. Mesh > Height sets the extrusion painted.
   Vibe and xt3D tabs: not connected yet, on purpose.
 - Rebuild after editing `livecode/editor_stack.livecodescript`:

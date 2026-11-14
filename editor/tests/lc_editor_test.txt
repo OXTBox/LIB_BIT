@@ -35,5 +35,17 @@ put "Vibe tab: map visible " & the visible of group "MapView" of stack "BitEdito
 send "Ed.ShowTab " & quote & "1bit" & quote to stack "BitEditor"
 send "Ed.SaveMap " & quote & "//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/tests/_test_saved.cellmap" & quote to stack "BitEditor"
 put "status: " & field "Status" of stack "BitEditor" & return after tLog
+put "palette: " & the width of image "Palette" of stack "BitEditor" & "x" & the height of image "Palette" of stack "BitEditor" & "" & return after tLog
+send "Ed.OpenMap " & quote & "//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor/maps/amazing_couple.cellmap" & quote to stack "BitEditor"
+send "Ed.ShowTab 1bit" to stack "BitEditor"
+put "1bit: " & value("Ed.State()", stack "BitEditor") & return after tLog
+send "Ed.SelectCode 255" to stack "BitEditor"
+put "palette select box: " & the rect of graphic "PalSel" of stack "BitEditor" & return after tLog
+send "Ed.PaintGlyph 6, 6" to stack "BitEditor"
+put "painted glyph 255 at 6,6: " & the tooltip of graphic "m_6_6" of stack "BitEditor" & return after tLog
+send "Ed.ShowTab Cells" to stack "BitEditor"
+put "Cells tab: map grid visible " & the visible of group "MapView" of stack "BitEditor" & ", 1bit visible " & the visible of image "OneBit" of stack "BitEditor" & return after tLog
+send "Ed.TilesMenu " & quote & "Auto Walls" & quote to stack "BitEditor"
+put "auto walls: " & field "Status" of stack "BitEditor" & return after tLog
 delete stack "BitEditor"
 return tLog

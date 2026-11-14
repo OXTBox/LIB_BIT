@@ -330,3 +330,105 @@ function CellMap.FontToText pFont
    end repeat
    return tOut
 end CellMap.FontToText
+
+-------------------------------------------------------------------- auto walls, the 1-bit picture
+
+-- Aquarius (AquaDouble) line pieces by full-height neighbours, N=1 E=2 S=4 W=8 (mask + 1 = item)
+constant kAutoWall = "198,214,172,207,214,214,222,205,172,223,172,204,206,221,220,200"
+
+-- every wall cell (tag #) whose design is plain # or an earlier line piece gets the piece that
+-- joins its full-height neighbours; hand-made designs (letters) are kept. Same as cellmap.py.
+command CellMap.AutoWalls @pMap
+   local r, c, tRows, tCols, tMask, tCode
+   put pMap["meta"]["rows"] into tRows
+   put pMap["meta"]["cols"] into tCols
+   put 1 into r
+   repeat while r <= tRows
+      put 1 into c
+      repeat while c <= tCols
+         put pMap["design"][r][c] into tCode
+         if pMap["tags"][r][c] is "#" and (tCode is 35 or tCode is among the items of kAutoWall) then
+            put 0 into tMask
+            if r > 1 and pMap["heights"][r - 1][c] >= 9 then add 1 to tMask
+            if c < tCols and pMap["heights"][r][c + 1] >= 9 then add 2 to tMask
+            if r < tRows and pMap["heights"][r + 1][c] >= 9 then add 4 to tMask
+            if c > 1 and pMap["heights"][r][c - 1] >= 9 then add 8 to tMask
+            put item (tMask + 1) of kAutoWall into pMap["design"][r][c]
+         end if
+         add 1 to c
+      end repeat
+      add 1 to r
+   end repeat
+end CellMap.AutoWalls
+
+-- the whole map as one 1-bit picture: each cell's design glyph (16 x 16), every pixel pScale
+-- times, 0/1 rows (LIB_BIT's grids; Bit.ToPBM shows it). pInvert: 1 becomes 0 (light on dark)
+function CellMap.OneBitGrid pMap, pFont, pScale, pInvert
+   local tGlyph, tLines, r, c, g, tCode, tRow, tOut, tBits, tScaled, i, tCh, k
+   if pScale is not an integer or pScale < 1 then put 1 into pScale
+   -- each code's 16 rows once, already scaled sideways (and inverted)
+   put 1 into r
+   repeat while r <= pMap["meta"]["rows"]
+      put 1 into c
+      repeat while c <= pMap["meta"]["cols"]
+         put pMap["design"][r][c] into tCode
+         if tGlyph[tCode] is empty then
+            put empty into tScaled
+            repeat for each line tBits in CellMap.Glyph(pFont, tCode)
+               if pInvert then
+                  replace "0" with "x" in tBits
+                  replace "1" with "0" in tBits
+                  replace "x" with "1" in tBits
+               end if
+               if pScale > 1 then
+                  put empty into tLines
+                  repeat for each char tCh in tBits
+                     put 1 into k
+                     repeat while k <= pScale
+                        put tCh after tLines
+                        add 1 to k
+                     end repeat
+                  end repeat
+                  put tLines into tBits
+               end if
+               put tBits & return after tScaled
+            end repeat
+            put tScaled into tGlyph[tCode]
+         end if
+         add 1 to c
+      end repeat
+      add 1 to r
+   end repeat
+   -- assemble row by row
+   put empty into tOut
+   put 1 into r
+   repeat while r <= pMap["meta"]["rows"]
+      put 1 into g
+      repeat while g <= 16
+         put empty into tRow
+         put 1 into c
+         repeat while c <= pMap["meta"]["cols"]
+            put line g of tGlyph[pMap["design"][r][c]] after tRow
+            add 1 to c
+         end repeat
+         put 1 into i
+         repeat while i <= pScale
+            put tRow & return after tOut
+            add 1 to i
+         end repeat
+         add 1 to g
+      end repeat
+      add 1 to r
+   end repeat
+   delete the last char of tOut
+   return tOut
+end CellMap.OneBitGrid
+
+-- which cell is at pixel pX,pY of the 1-bit picture -> "col,row" (empty outside)
+function CellMap.CellAtPixel pMap, pScale, pX, pY
+   local tC, tR
+   put pX div (16 * pScale) + 1 into tC
+   put pY div (16 * pScale) + 1 into tR
+   if pX < 0 or pY < 0 or tC > pMap["meta"]["cols"] or tR > pMap["meta"]["rows"] then return empty
+   return tC & comma & tR
+end CellMap.CellAtPixel

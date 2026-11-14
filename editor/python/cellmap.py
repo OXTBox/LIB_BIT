@@ -13,6 +13,7 @@ The file is plain UTF-8 text in [sections]; LiveCode reads it into a keyed array
     python3 -I cellmap.py example              write maps/amazing_couple.cellmap (Amazing Couple's defaults)
     python3 -I cellmap.py show FILE            print a cellmap: tags, design, heights
     python3 -I cellmap.py check FILE           read, write back, compare (round trip)
+    python3 -I cellmap.py onebit FILE          the map as its 1-bit picture (half size, in the terminal)
 """
 import colorsys, json, os, sys
 
@@ -213,7 +214,50 @@ def glyph_rows(font, code, size=16):
 
 # ------------------------------------------------------------------ the map file
 DEFAULT_META = dict(name='untitled', cols=13, rows=13, cell=76, wallH=58, unitPx=16,
-                    font='Base_001', tags='tags_default', version=1)
+                    font='Aquarius', tags='tags_default', version=1)
+
+# ------------------------------------------------------------------ auto walls (Aquarius line pieces)
+# a wall cell takes the piece that joins its full-height neighbours: N=1 E=2 S=4 W=8
+# (Aquarius / AquaDouble codes: 172 -, 214 |, 207 L, 222 r, 206 7, 223 J, 205 |-, 221 -|,
+#  220 T, 204 _|_, 200 +, 198 a lone block)
+AUTO_WALL = [198, 214, 172, 207, 214, 214, 222, 205, 172, 223, 172, 204, 206, 221, 220, 200]
+
+
+def autowall(m, wall_tag='#', full=9):
+    """give every wall cell (tag '#') whose design is plain '#' or an earlier line piece the line
+    piece that joins its full-height neighbours; hand-made designs (letters) are kept"""
+    rows, cols = m['meta']['rows'], m['meta']['cols']
+    pieces = set(AUTO_WALL) | {ord(wall_tag)}
+    def tall(r, c):
+        return 0 <= r < rows and 0 <= c < cols and m['heights'][r][c] >= full
+    for r in range(rows):
+        for c in range(cols):
+            if m['tags'][r][c] != wall_tag or m['design'][r][c] not in pieces:
+                continue
+            mask = tall(r - 1, c) * 1 + tall(r, c + 1) * 2 + tall(r + 1, c) * 4 + tall(r, c - 1) * 8
+            m['design'][r][c] = AUTO_WALL[mask]
+    return m
+
+
+def onebit_rows(m, font, scale=1, invert=False):
+    """the whole map as one 1-bit picture: each cell's design glyph (16 x 16), scaled; rows of 0/1"""
+    size = 16
+    out = []
+    cache = {}
+    for r in range(m['meta']['rows']):
+        for g in range(size):
+            line = []
+            for c in range(m['meta']['cols']):
+                code = m['design'][r][c]
+                if code not in cache:
+                    cache[code] = glyph_rows(font, code, size)
+                bits = cache[code][g]
+                if invert:
+                    bits = bits.translate(str.maketrans('01', '10'))
+                line.append(''.join(b * scale for b in bits))
+            row = ''.join(line)
+            out.extend([row] * scale)
+    return out
 
 
 def new_map(cols=13, rows=13, **meta):
@@ -310,7 +354,7 @@ def maze(cols, rows=None, seed=1):
 def example():
     """Amazing Couple's defaults: kRooms 6 (a 13 x 13 grid), kCell 76, kWallH 58, seed 1"""
     grid = maze(6, 6, 1)
-    m = new_map(13, 13, name='amazing_couple', cell=76, wallH=58)
+    m = new_map(13, 13, name='amazing_couple', cell=76, wallH=58, font='Aquarius')
     for r, line in enumerate(grid):
         for c, ch in enumerate(line):
             wall = ch == '1'
@@ -329,7 +373,7 @@ def example():
         if grid[r][c] == '0':
             m['tags'][r][c] = t
             m['heights'][r][c] = dict((x[0], x[3]) for x in TAGS)[t]
-    return m
+    return autowall(m)
 
 
 def show(m):
@@ -356,6 +400,11 @@ def main(argv):
         p = os.path.join(ROOT, 'maps', 'amazing_couple.cellmap')
         write_map(example(), p)
         print('wrote', p)
+    elif cmd == 'onebit':
+        m = read_map(argv[2])
+        font = read_font(os.path.join(ROOT, 'fonts', m['meta']['font'] + '.font.txt'))
+        for row in onebit_rows(m, font)[::2]:
+            print(row[::2].replace('0', ' ').replace('1', '#'))
     elif cmd == 'show':
         show(read_map(argv[2]))
     elif cmd == 'check':
