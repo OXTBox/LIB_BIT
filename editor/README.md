@@ -43,6 +43,10 @@ font	Base_001    tags	tags_default     version	1
 In LiveCode: `tMap["meta"][key]`, `tMap["design"|"tags"|"heights"][row][col]`, `tMap["tagdefs"][char][...]`.
 In Python: the same names in a dict of lists. Both write the identical file (tested).
 
+## View menu
+Palette / Map / Ghost strength (100% to 35%, by blendLevel; the palette starts at 55%), Ghost: Off.
+Colours later (LIB_THEME), e.g. glyphs in hot pink.
+
 ## Fonts
 - **Aquarius** (default): the Mattel Aquarius character set at 16 x 16 (AquaDouble, from the
   owner's BitFontMaker stack). Codes 128-255 hold line pieces (corners, tees, crosses), quarter
@@ -60,7 +64,8 @@ It opens `maps/amazing_couple.cellmap`.
   under it (flip, rotate, invert, shift) work on the whole glyph. The panel shows the tag and its
   **effect** (what the cell does). File > Save Font keeps glyph changes.
 - **Top left:** the glyph palette: all 256 glyphs of the map's font in one 1-bit picture; click one.
-- **Right, 1bit tab:** the whole map as ONE 1-bit picture made of its glyphs, light on dark:
+- **Right, 1bit tab:** the whole map as ONE 1-bit picture made of its glyphs, light on dark. A
+  **ghost** of the selected glyph follows the mouse, snapped to the cell it would paint:
   click or drag paints the selected glyph into cells (design only); right-click picks a glyph.
   `python3 -I python/cellmap.py onebit maps/amazing_couple.cellmap` shows it in a terminal.
 - **Right, Cells tab:** the coloured cell grid: click or drag paints the selected code (design, tag

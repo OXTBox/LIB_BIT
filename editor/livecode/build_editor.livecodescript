@@ -28,7 +28,8 @@ command Build.Editor pDir
          "Grid" & tab & "Size (columns, rows)...|Cell Size (engine units)...|Wall Height (engine units)...|-|Font..." & return & \
          "Mesh" & tab & "Height: Tag Default|Height: Floor (0)|Height: Step (1)|Height: Block (3)|Height: Full Wall (9)|-|Merge With Neighbours|Keep Every Edge" & return & \
          "Scene" & tab & "Scene Size...|Culling" & return & \
-         "Tiles" & tab & "Paint Everything|Paint Design Only|Paint Tag Only|Paint Height Only|-|View Tags|View Design|View Heights|-|Auto Walls|-|Tag Colour..." into tMenus
+         "Tiles" & tab & "Paint Everything|Paint Design Only|Paint Tag Only|Paint Height Only|-|View Tags|View Design|View Heights|-|Auto Walls|-|Tag Colour..." & return & \
+         "View" & tab & "Palette: 100%|Palette: 75%|Palette: 55%|Palette: 35%|-|Map: 100%|Map: 75%|Map: 55%|Map: 35%|-|Ghost: 100%|Ghost: 70%|Ghost: 40%|Ghost: Off" into tMenus
    put 8 into x
    set the itemDel to tab
    repeat for each line tMenu in tMenus
@@ -113,6 +114,17 @@ command Build.Editor pDir
    -- the 1bit view: the whole map as one 1-bit picture of its glyphs (drawn by the stack script)
    create image "OneBit"
    set the rect of it to 594, 64, 610, 80
+   -- the ghost: the selected glyph, shown in the cell under the mouse before it is painted
+   create image "Ghost"
+   set the rect of it to 594, 64, 610, 80
+   set the visible of it to false
+   create graphic "GhostBox"
+   set the style of it to "rectangle"
+   set the filled of it to false
+   set the lineSize of it to 1
+   set the foregroundColor of it to Theme.Get("accent")
+   set the uThemeSkip of it to true
+   set the visible of it to false
    create field "NotYet"
    set the rect of it to 602, 80, 1152, 220
    set the lockText of it to true
@@ -150,11 +162,12 @@ function Build.CardScript
          "  put the short name of the target into tName" & return & \
          "  if tName begins with " & quote & "m_" & quote & " then Ed.MapDown tName, pButton" & return & \
          "  if tName begins with " & quote & "b_" & quote & " then Ed.BoardDown tName" & return & \
-         "  if tName is " & quote & "OneBit" & quote & " then Ed.OneBitDown pButton" & return & \
+         "  if tName is " & quote & "OneBit" & quote & " or tName is " & quote & "Ghost" & quote & " then Ed.OneBitDown pButton" & return & \
          "  if tName is " & quote & "Palette" & quote & " then Ed.PaletteDown" & return & \
          "end mouseDown" & return & \
-         "on mouseMove" & return & "  Ed.BoardMove" & return & "  Ed.MapMove" & return & "  Ed.OneBitMove" & return & "end mouseMove" & return & \
+         "on mouseMove" & return & "  Ed.BoardMove" & return & "  Ed.MapMove" & return & "  Ed.OneBitMove" & return & "  Ed.GhostMove" & return & "end mouseMove" & return & \
          "on mouseUp" & return & "  Ed.MouseUp" & return & "end mouseUp" & return & \
+         "on mouseLeave" & return & "  Ed.GhostMove" & return & "end mouseLeave" & return & \
          "on mouseRelease" & return & "  Ed.MouseUp" & return & "end mouseRelease"
 end Build.CardScript
 

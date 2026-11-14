@@ -47,5 +47,22 @@ send "Ed.ShowTab Cells" to stack "BitEditor"
 put "Cells tab: map grid visible " & the visible of group "MapView" of stack "BitEditor" & ", 1bit visible " & the visible of image "OneBit" of stack "BitEditor" & return after tLog
 send "Ed.TilesMenu " & quote & "Auto Walls" & quote to stack "BitEditor"
 put "auto walls: " & field "Status" of stack "BitEditor" & return after tLog
+send "Ed.ShowTab 1bit" to stack "BitEditor"
+send "Ed.SelectCode 200" to stack "BitEditor"
+put the imageData of image "Ghost" of stack "BitEditor" into tD
+put 0 into tLit
+put 4 into k
+repeat while k <= the length of tD
+  if byteToNum(byte k of tD) > 128 then add 1 to tLit
+  add 4 to k
+end repeat
+put "ghost of 200 (cross): " & the width of image "Ghost" of stack "BitEditor" & "x" & the height of image "Ghost" of stack "BitEditor" & ", lit pixels " & tLit & return after tLog
+put "palette blend at start: " & the blendLevel of image "Palette" of stack "BitEditor" & return after tLog
+send "Ed.ViewMenu " & quote & "Palette: 75%" & quote to stack "BitEditor"
+send "Ed.ViewMenu " & quote & "Map: 55%" & quote to stack "BitEditor"
+send "Ed.ViewMenu " & quote & "Ghost: 70%" & quote to stack "BitEditor"
+put "after View menu: palette " & the blendLevel of image "Palette" of stack "BitEditor" & ", map " & the blendLevel of image "OneBit" of stack "BitEditor" & ", ghost " & the blendLevel of image "Ghost" of stack "BitEditor" & return after tLog
+send "Ed.GhostMove" to stack "BitEditor"
+put "ghost with the mouse away from the map: visible " & the visible of image "Ghost" of stack "BitEditor" & return after tLog
 delete stack "BitEditor"
 return tLog

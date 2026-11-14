@@ -12,11 +12,13 @@
 ## RIGHT   1bit / Cells / Vibe / xt3D tabs. 1bit = the whole map as ONE 1-bit picture of its
 ##         glyphs (owner, 11 14 2026): click or drag paints the selected glyph (design only),
 ##         right-click picks. Cells = the coloured cell grid (tags, design, heights views).
-## MENUS   File  Bit  Grid  Mesh  Scene  Tiles
+##         A ghost of the selected glyph follows the mouse over the map, snapped to the cell
+##         it would paint, drawn exactly as it will look (owner, 11 14 2026).
+## MENUS   File  Bit  Grid  Mesh  Scene  Tiles  View (palette, map and ghost strength)
 ######################################################################################
 
 local sDir, sMap, sMapPath, sTags, sFont, sFontPath, sCode, sMode, sView, sExtrude
-local sDirtyMap, sDirtyFont, sBoardPaint, sCellPx, sLastCell, sScale1, sOneBitLast, sTab
+local sDirtyMap, sDirtyFont, sBoardPaint, sCellPx, sLastCell, sScale1, sOneBitLast, sTab, sGhostOn
 
 constant kBG = "30,30,34"
 constant kPanel = "42,42,48"
@@ -46,6 +48,9 @@ on Ed.Init
    put "all" into sMode
    put "tags" into sView
    put "tag" into sExtrude
+   put true into sGhostOn
+   -- the palette softer than full white (owner: "that harsh white is too intense"); View menu changes it
+   set the blendLevel of image "Palette" to 45
    put CellMap.TagsFromText(CellMap.ReadText(sDir & "/data/tags_default.txt")) into sTags
    Ed.OpenMap sDir & "/maps/amazing_couple.cellmap"
    Ed.FillList
@@ -143,7 +148,73 @@ on Ed.SelectCode pCode
    Ed.DrawGlyph
    Ed.ShowInfo
    Ed.PalSelect
+   Ed.MakeGhost
 end Ed.SelectCode
+
+-------------------------------------------------------------------- the ghost (preview before painting)
+
+-- the selected glyph at the map's scale, light on dark, exactly as it would be painted
+on Ed.MakeGhost
+   local tOne
+   if there is not an image "Ghost" or sScale1 is not an integer then exit Ed.MakeGhost
+   put 1 into tOne["meta"]["cols"]
+   put 1 into tOne["meta"]["rows"]
+   put sCode into tOne["design"][1][1]
+   set the text of image "Ghost" to Bit.ToPBM(CellMap.OneBitGrid(tOne, sFont, sScale1, true))
+end Ed.MakeGhost
+
+-- over the 1bit map: the ghost sits on the cell under the mouse; anywhere else it hides
+on Ed.GhostMove
+   local tCell, tL, tT, tPx
+   put empty into tCell
+   -- only while the mouse is over this window's map (leaving the window hides it too)
+   if sGhostOn and sTab is "1bit" and the visible of image "OneBit" and the mouseStack is the short name of this stack then put Ed.OneBitCell() into tCell
+   if tCell is empty then
+      if the visible of image "Ghost" then
+         set the visible of image "Ghost" to false
+         set the visible of graphic "GhostBox" to false
+      end if
+      exit Ed.GhostMove
+   end if
+   put 16 * sScale1 into tPx
+   put the left of image "OneBit" + (item 1 of tCell - 1) * tPx into tL
+   put the top of image "OneBit" + (item 2 of tCell - 1) * tPx into tT
+   lock screen
+   set the rect of image "Ghost" to tL, tT, tL + tPx, tT + tPx
+   set the rect of graphic "GhostBox" to tL - 1, tT - 1, tL + tPx + 1, tT + tPx + 1
+   set the visible of image "Ghost" to true
+   set the visible of graphic "GhostBox" to true
+   unlock screen
+end Ed.GhostMove
+
+-- View menu: how strong the palette, the map and the ghost look ("Palette: 55%" -> blendLevel 45)
+on Ed.ViewMenu pItem
+   local tWhat, tPct
+   put word 1 of pItem into tWhat
+   replace ":" with empty in tWhat
+   if pItem is "Ghost: Off" then
+      put false into sGhostOn
+      Ed.GhostMove
+      Ed.Status "ghost preview off"
+      exit Ed.ViewMenu
+   end if
+   put word 2 of pItem into tPct
+   replace "%" with empty in tPct
+   if tPct is not a number then exit Ed.ViewMenu
+   switch tWhat
+      case "Palette"
+         set the blendLevel of image "Palette" to 100 - tPct
+         break
+      case "Map"
+         set the blendLevel of image "OneBit" to 100 - tPct
+         break
+      case "Ghost"
+         put true into sGhostOn
+         set the blendLevel of image "Ghost" to 100 - tPct
+         break
+   end switch
+   Ed.Status tWhat && tPct & "%"
+end Ed.ViewMenu
 
 -------------------------------------------------------------------- the glyph palette (left, top)
 
@@ -198,6 +269,10 @@ on Ed.DrawOneBit
    set the text of image "OneBit" to Bit.ToPBM(CellMap.OneBitGrid(sMap, sFont, sScale1, true))
    set the rect of image "OneBit" to 594, 64, 594 + tW * sScale1, 64 + tH * sScale1
    unlock screen
+   if the uGhostScale of image "Ghost" is not sScale1 then
+      set the uGhostScale of image "Ghost" to sScale1
+      Ed.MakeGhost
+   end if
 end Ed.DrawOneBit
 
 -- click: paint the selected glyph into the cell (design only); right-click: pick its glyph
@@ -294,8 +369,9 @@ end Ed.SetBit
 on Ed.SetGlyph pGrid
    put CellMap.GlyphToRows(pGrid) into sFont[sCode]
    put true into sDirtyFont
-   Ed.DrawPalette          -- the palette and the map show the change at once
+   Ed.DrawPalette          -- the palette, the map and the ghost show the change at once
    Ed.DrawOneBit
+   Ed.MakeGhost
 end Ed.SetGlyph
 
 on Ed.BoardDown pName
@@ -546,6 +622,10 @@ on Ed.ShowTab pTab
    set the visible of image "OneBit" to (pTab is "1bit")
    set the visible of group "MapView" to (pTab is "Cells")
    set the visible of field "NotYet" to (pTab is among the items of "Vibe,xt3D")
+   if pTab is not "1bit" then
+      set the visible of image "Ghost" to false
+      set the visible of graphic "GhostBox" to false
+   end if
    if pTab is among the items of "Vibe,xt3D" then put pTab && "viewport: not connected yet." & return & return & \
          "The editor stays separate from the Vibecode3D and xt3d main stacks until the owner says so" && \
          "(11 14 2026). The map is saved as a plain .cellmap file that both engines will read." into field "NotYet"
@@ -579,6 +659,9 @@ on menuPick pItem
          break
       case "Tiles"
          Ed.TilesMenu pItem
+         break
+      case "View"
+         Ed.ViewMenu pItem
          break
       default
          pass menuPick
