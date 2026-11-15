@@ -1,0 +1,14 @@
+Amazing Couple mazes, checked by tools/couple_mazes.py
+
+maze_01  OK  (196 wall lines)
+maze_02  OK  (196 wall lines)
+maze_03  OK  (196 wall lines)
+maze_04  OK  (196 wall lines)
+maze_05  OK  (196 wall lines)
+maze_06  OK  (196 wall lines)
+maze_07  OK  (196 wall lines)
+maze_08  OK  (196 wall lines)
+maze_09  OK  (196 wall lines)
+maze_10  OK  (196 wall lines)
+maze_11  OK  (196 wall lines)
+maze_12  OK  (196 wall lines)
