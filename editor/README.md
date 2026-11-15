@@ -44,7 +44,11 @@ Version 1 files (below) still read; the BitEditor opens them as version 2 and sa
   tabs are drawn: `Theme.TabStrip` in LIB_THEME (one locked field a tab).
 - **Extrude: Glyph Shape** (Mesh menu; saved with the map as `extrude glyph`): a height raises
   the cell's glyph, not the whole cell. `CELLMAP_V2.md` section 4b.
-- **Painting in 3D and the Clutter brush:** planned in `PLAN_3D_PAINT_AND_CLUTTER.md`.
+- **Painting in the 3D preview.** The left button paints there with the same brush as on the
+  2D map (same undo); Alt + click picks up. While the RIGHT button is held it is camera mode:
+  drag turns, W A S D move forward / left / back / right, R F up / down, Shift + drag zooms.
+  `CellMap.Pick` (and `cellmap.pick`) finds the cell under a ray.
+- **Heights by dragging in 3D and the Clutter brush:** planned in `PLAN_3D_PAINT_AND_CLUTTER.md`.
 - **Tests with no window:** `python3 -I tests/run_headless.py tests/lc_v2_test.txt`, and in a
   copy of the editor folder (they rebuild the stack) `--root COPY tests/lc_feedback_1115_test.txt
   tests/lc_layout2_test.txt`. The LiveCode server has no screen: what a real window draws (the

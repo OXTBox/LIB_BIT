@@ -100,6 +100,36 @@ send "Ed.Undo" to stack "BitEditor"
 set the itemDel to "|"
 put "undo extrude: " & (item 9 of value("Ed.State()", stack "BitEditor") is item 9 of tS0) & cr after tLog
 set the itemDel to comma
+-- painting in the 3D preview: the cell drawn at a point is the cell picked at that point
+put empty into tBad
+repeat for each word tCell in "9,11 3,16 20,12 6,13 15,4 1,1 24,18 12,9"
+  put value("Ed.TestProject(" & tCell & ")", stack "BitEditor") into tPt
+  put value("Ed.ViewCellAt(" & tPt & ")", stack "BitEditor") into tGot
+  if tGot is not tCell then put tCell & "->" & tGot & " at " & tPt & "; " after tBad
+end repeat
+put "3D pick finds the cell drawn there (8 cells): " & (tBad is empty) && tBad & cr after tLog
+send "Ed.TestTurn 0.7,0.6" to stack "BitEditor"
+put empty into tBad
+repeat for each word tCell in "9,11 3,16 12,9 22,16"
+  put value("Ed.TestProject(" & tCell & ")", stack "BitEditor") into tPt
+  put value("Ed.ViewCellAt(" & tPt & ")", stack "BitEditor") into tGot
+  if tGot is not tCell then put tCell & "->" & tGot & " at " & tPt & "; " after tBad
+end repeat
+put "3D pick after turning the view: " & (tBad is empty) && tBad & cr after tLog
+-- camera mode: the keys move what the camera looks at; the picture still matches the pick
+put "keys W + D + R -> forward,right,up: " & (value("Ed.CamKeys(" & quote & "119,100,82" & quote & ")", stack "BitEditor") is "1,1,1") & ", S + A + F: " & (value("Ed.CamKeys(" & quote & "115,97,102" & quote & ")", stack "BitEditor") is "-1,-1,-1") & cr after tLog
+send "Ed.TestTurn 0,0.87" to stack "BitEditor"
+send "Ed.CamMove 100,0,0" to stack "BitEditor"
+put value("Ed.TestCamera()", stack "BitEditor") into tCam
+put "forward (view from the south) moves north: " & (item 4 of tCam is 0 and item 6 of tCam is -100) & cr after tLog
+send "Ed.CamMove 0,50,25" to stack "BitEditor"
+put value("Ed.TestCamera()", stack "BitEditor") into tCam
+put "right moves east, up moves up: " & (item 4 of tCam is 50 and item 5 of tCam is 25) & cr after tLog
+send "Ed.Draw3D" to stack "BitEditor"
+put value("Ed.TestProject(9,11)", stack "BitEditor") into tPt
+put "pick still right after moving the camera: " & (value("Ed.ViewCellAt(" & tPt & ")", stack "BitEditor") is "9,11") & cr after tLog
+send "Ed.SceneMenu " & quote & "Reset View" & quote to stack "BitEditor"
+put "reset view puts the camera back: " & (item 4 to 6 of value("Ed.TestCamera()", stack "BitEditor") is "0,0,0") & cr after tLog
 -- the history as text
 send "Ed.EditMenu " & quote & "Export Change History" & quote to stack "BitEditor"
 put url ("binfile:" & tD & "/maps/wizard_pool_history.txt") into tHist

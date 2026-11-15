@@ -731,6 +731,49 @@ function CellMap.CellAt pMap, pX, pZ
          (cmFloor(pZ / pMap["meta"]["cell"] + pMap["meta"]["rows"] / 2) + 1)
 end CellMap.CellAt
 
+-- the cell a ray meets first (painting in a 3D view): "col,row,what", what = ground, roof, slab
+-- or void (empty space inside the map, met at the flat floor's height); empty = nothing.
+-- The ray starts at pEX,pEY,pEZ (engine units, y up) and goes along pDX,pDY,pDZ for pMax units,
+-- looked at every eighth of a cell. Whole cells only (a glyph shape counts as its cell).
+function CellMap.Pick pMap, pEX, pEY, pEZ, pDX, pDY, pDZ, pMax
+   local tLen, tStep, tN, i, x, y, z, tCell, c, r, tC, tHU, tBase, yh, tInside
+   put sqrt(pDX * pDX + pDY * pDY + pDZ * pDZ) into tLen
+   if tLen is 0 then return empty
+   put pMap["meta"]["cell"] / 8 into tStep
+   put trunc(pMax / tStep) into tN
+   put CellMap.HU(pMap) into tHU
+   put CellMap.Opt(pMap, "base") into tBase
+   put 0 into i
+   repeat while i <= tN
+      put pEX + pDX * (i * tStep / tLen) into x
+      put pEY + pDY * (i * tStep / tLen) into y
+      put pEZ + pDZ * (i * tStep / tLen) into z
+      add 1 to i
+      put y / tHU - tBase into yh
+      put CellMap.CellAt(pMap, x, z) into tCell
+      put item 1 of tCell into c
+      put item 2 of tCell into r
+      put (c >= 1 and r >= 1 and c <= pMap["meta"]["cols"] and r <= pMap["meta"]["rows"]) into tInside
+      put empty into tC
+      if tInside then put CellMap.Column(pMap, c, r) into tC
+      if tC is empty then
+         if yh <= 1 then
+            if tInside then return c & comma & r & ",void"
+            return empty
+         end if
+         next repeat
+      end if
+      if yh <= item 1 of tC then return c & comma & r & ",ground"
+      if item 2 of tC is not empty then
+         if yh >= item 2 of tC and yh <= max(item 3 of tC, item 2 of tC + 4) then return c & comma & r & ",roof"
+      end if
+      if item 4 of tC is not empty then
+         if yh >= item 4 of tC and yh <= item 5 of tC then return c & comma & r & ",slab"
+      end if
+   end repeat
+   return empty
+end CellMap.Pick
+
 -- the height (engine units, up) an actor now at height pY would stand at on point pX,pZ; empty =
 -- it cannot: outside, empty space, a tag whose effect is block or locked, a rise over `step`,
 -- less than `head` of air. pFont (may be empty) adds the raised glyphs.

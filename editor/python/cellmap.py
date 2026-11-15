@@ -547,6 +547,35 @@ def hu(m):
     return m['meta']['wallH'] / 100.0
 
 
+def pick(m, ex, ey, ez, dx, dy, dz, max_len):
+    """the cell a ray meets first (painting in a 3D view): (col, row, what), what = ground, roof,
+    slab or void (empty space inside the map, met at the flat floor's height); None = nothing.
+    The ray starts at ex,ey,ez (engine units, y up), goes along dx,dy,dz for max_len units,
+    looked at every eighth of a cell."""
+    length = (dx * dx + dy * dy + dz * dz) ** 0.5
+    if length == 0:
+        return None
+    step = m['meta']['cell'] / 8
+    k, base = hu(m), opt(m, 'base')
+    for i in range(int(max_len / step) + 1):
+        x, y, z = ex + dx * (i * step / length), ey + dy * (i * step / length), ez + dz * (i * step / length)
+        yh = y / k - base
+        c, r = cell_at(m, x, z)
+        inside = 1 <= c <= m['meta']['cols'] and 1 <= r <= m['meta']['rows']
+        col = column(m, r - 1, c - 1) if inside else None
+        if col is None:
+            if yh <= 1:
+                return (c, r, 'void') if inside else None
+            continue
+        if yh <= col[0]:
+            return c, r, 'ground'
+        if col[1] is not None and col[1] <= yh <= max(col[2], col[1] + 4):
+            return c, r, 'roof'
+        if col[3] is not None and col[3] <= yh <= col[4]:
+            return c, r, 'slab'
+    return None
+
+
 def stand_at(m, tags, font, x, z, y):
     """the height (engine units) an actor now at height y would stand at on point x,z; None = cannot.
     Blocked by: outside, empty space, a tag whose effect is block or locked, a rise over `step`,

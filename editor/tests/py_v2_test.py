@@ -72,6 +72,26 @@ segs = cm.level_segments(m, tags, font)
 open(os.path.join(HERE, '_py_segments.txt'), 'w', newline='\n').write('\n'.join(segs) + '\n')
 open(os.path.join(HERE, '_py_walk.txt'), 'w', newline='\n').write('\n'.join(walks) + '\n')
 
+# pick (11 15 2026): the cell a ray meets first, for painting in a 3D view
+RAYS = ['yard down|9|11|0|2000|0|0|-1|0', 'pool down|6|13|0|2000|0|0|-1|0', 'cloud down|15|4|0|2000|0|0|-1|0',
+        'tower wall from the south|19|12|0|300|0|0|-0.2|-1', 'yard slanted|12|16|0|900|700|0.1|-1|-0.9',
+        'over the east wall|30|9|0|500|0|-1|-0.5|0', 'misses to the sky|12|9|0|100|0|0|1|0', 'outside|40|40|0|500|0|0|-1|0']
+picks = []
+for line in RAYS:
+    name, c, r, ox, ey, oz, dx, dy, dz = line.split('|')
+    got = cm.pick(m, cm.cell_x(m, float(c)) + float(ox), float(ey), cm.cell_z(m, float(r)) + float(oz), float(dx), float(dy), float(dz), 6000)
+    picks.append(name + '|' + ('' if got is None else '%d,%d,%s' % got))
+check('pick: straight down on the yard, the pool, a cloud', picks[:3], ['yard down|9,11,ground', 'pool down|6,13,ground', 'cloud down|15,4,slab'])
+check('pick: a slanted ray stops at the tower wall; up misses; outside misses',
+      (picks[3].split('|')[1].endswith('ground'), picks[6], picks[7]), (True, 'misses to the sky|', 'outside|'))
+hole = copy.deepcopy(m) if 'copy' in dir() else None
+import copy
+hole = copy.deepcopy(m)
+hole['floor'][10][8] = 0
+check('pick: empty space inside the map is met at the floor (so it can be painted)', cm.pick(hole, cm.cell_x(m, 9), 2000, cm.cell_z(m, 11), 0, -1, 0, 6000), (9, 11, 'void'))
+open(os.path.join(HERE, '_py_pick.txt'), 'w', newline='\n').write('\n'.join(picks) + '\n')
+print('picks:', ' / '.join(picks))
+
 # extrude glyph (the owner, 11 15 2026): the glyph stands as the solid, the rest of the cell is floor
 import copy
 g = copy.deepcopy(m)

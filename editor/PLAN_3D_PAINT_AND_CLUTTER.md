@@ -3,8 +3,8 @@
 Claude (Fable), 2026-11-15, from the owner's notes of that morning: "100% of users are going to
 want to paint in the 3D scene, it's the first thing I tried even though I KNEW it wasn't in the
 design. Let's make a plan for that", and "A Clutter brush should be included in that plan".
-Nothing here is built yet. Estimates are AI working time. Questions with the default I would
-take are at the end.
+Estimates are AI working time. **Built so far (2026-11-15, after the owner's answers): 1a, 1b
+and 1c.** Everything else is still a plan. Open questions are at the end.
 
 ## What is already there to build on (done 2026-11-15)
 - **The stroke engine** (`Ed.StrokeBegin / StrokeTick / StrokeEnd` in `editor_stack`): one press
@@ -17,23 +17,28 @@ take are at the end.
 
 ## Part 1. Painting in the 3D view
 
-### 1a. Which cell is under the mouse (picking) - about 1 hour
+### 1a. Which cell is under the mouse (picking) - DONE
 The preview is drawn by `edProject` (turn, tilt, distance). Picking is the same sum backwards:
 the mouse gives a ray from the eye; walk that ray across the grid cell by cell (the way a
 raycaster does) and stop at the first cell whose top is above the ray: its ground, its roof
 top, or its slab. That gives the cell AND the level (floor, roof or cloud) the user pointed at.
 Pure maths, no screen needed, so it gets a Python twin and a test like the rest of cellmap:
-`CellMap.Pick(map, eye, ray)` -> "col,row,level,face" (face: top, or the side n / e / s / w).
+As built: `CellMap.Pick(map, ex, ey, ez, dx, dy, dz, max)` -> "col,row,what" (what: ground, roof,
+slab, or void = empty space inside the map, so it can be painted). It looks along the ray every
+eighth of a cell rather than cell by cell; the face (which side) is not given yet (needed for 1e).
 
-### 1b. Painting - about 1 hour
+### 1b. Painting - DONE (the ghost in 3D is not: the yellow cursor marks the cell)
 `Ed.MapCell()` gets a sibling `Ed.ViewCell()`; the stroke engine takes whichever the mouse is
 over. Same brush, same three things painted (glyph, property, height), same undo. The 2D map
 and the 3D view update together, as now. The glyph ghost is drawn on the cell's top in 3D.
 
-### 1c. The mouse in the 3D view (a decision: question 1)
-Today a left drag turns the view. Painting needs the left button. Proposed:
-left = paint; right drag = turn; wheel = zoom; middle drag or Space + drag = slide the view;
-Alt + click = pick up what is there (as right-click does in 2D).
+### 1c. The mouse in the 3D view - DONE (the owner's answer, 2026-11-15)
+"Left paints, right camera mode (should enable WASD RF (forward, strafe left, strafe right,
+back and Up Down) while right key is held)."
+As built: left = paint (Alt + click picks up); while the RIGHT button is held: drag turns,
+W / S forward / back, A / D left / right, R / F up / down, Shift + drag zooms; the wheel zooms.
+The camera turns around the point it looks at, and the keys move that point (0.8 of the
+viewing distance a second). Scene > Reset View puts it back.
 
 ### 1d. Heights by hand - about 1.5 hours
 In the Heights tab, press on a cell in 3D and drag up or down: its floor (or ceiling, by the
@@ -46,8 +51,7 @@ A click on a wall's side could paint the neighbouring cell (build outward, as in
 games). The pick already knows the face, so this is small, but it changes what a click means:
 leave it off until asked for.
 
-**Order:** 1a, 1b, 1c together (one sitting, about 2.5 hours with tests), the owner tries it,
-then 1d.
+**Order:** 1a, 1b, 1c are built; the owner tries them; then 1d.
 
 ## Part 2. The Clutter brush
 
@@ -118,9 +122,8 @@ for animation or path systems for entities and the other strictly editor require
 2e (editor), 2d (shapes), 2f (game). About 9 hours in all; 2a-2c can start at once.
 
 ## Questions (the default I take if you say nothing)
-1. **Left button in the 3D view:** paint, with turning moved to the right button? Default: yes.
-2. **Extrude default:** new maps start as Glyph Shape or Whole Cell? Default: Whole Cell (old
-   maps and the games stay as they are); you switch a map in the Mesh menu.
+1. ANSWERED: left paints, right button held = camera mode with W A S D R F. Built.
+2. ANSWERED: new maps start with Whole Cell. (As it already was.)
 3. **Clutter kinds first:** boxes, cones and cylinders as placeholders, then Spark's entity
    recipes? Default: yes, placeholders first.
 4. **Clutter and walking:** does clutter block? Default: no, unless its list line says so.

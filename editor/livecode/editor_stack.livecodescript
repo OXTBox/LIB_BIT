@@ -20,8 +20,11 @@
 ##                    grey / red / green / blue swatches paint the five height layers
 ##         What a click paints: Heights tab = a height; otherwise the left tab decides.
 ## RIGHT   the 3D preview: the level's lines exactly as CellMap.LevelSegments gives them to
-##         Vibecode3D (LIB_EDITOR E13), redrawn at every change. Drag turns it, shift-drag
-##         or the wheel zooms. The cell under the mouse in the 2D map is marked in yellow.
+##         Vibecode3D (LIB_EDITOR E13), redrawn at every change. The cell under the mouse (in
+##         the 2D map or here) is marked in yellow. LEFT button paints here, the same brush
+##         as the 2D map (CellMap.Pick finds the cell); Alt + click picks up. RIGHT button
+##         held = camera mode: drag turns, W A S D move forward / left / back / right, R F up /
+##         down (Shift + drag zooms); the wheel zooms.
 ## MENUS   File  Edit  Bit  Grid  Mesh  Scene  Tiles  View
 ## TABS    drawn ones (LIB_THEME Theme.TabStrip: fields "tab_<strip>_<n>"), not the native tab
 ##         control, which stays light grey on white whatever the colours.
@@ -39,6 +42,7 @@ local sDirtyMap, sDirtyFont, sBoardPaint, sPx, sGhostOn, sHover
 local sHTool, sHLayer, sHValue, sHBlocks, sCache
 local sSegs, sSegCount, sYaw, sPitch, sDist, sRelief3D, sDrag
 local sMirrorH, sMirrorV
+local sTX, sTY, sTZ, sCamOn, sCamAt, sCamId
 local sStrokeKind, sStrokeAt, sStrokeName, sStrokeN, sTickId, sDirty2D, sDirty3D, sDirtyGlyph, sHeavyAt
 local sHist, sHistN, sHistMax, sStroke
 
@@ -642,7 +646,8 @@ end Ed.Mirrored
 
 -------------------------------------------------------------------- strokes: one press of the mouse, followed until it is released
 
--- pKind: "board" or "map" (followed by Ed.StrokeTick), or "call" (one command, ended by its caller)
+-- pKind: "board", "map" or "view" (the 3D preview), followed by Ed.StrokeTick; or "call" (one
+-- command, ended by its caller)
 on Ed.StrokeBegin pKind, pName
    if sStrokeKind is not empty then Ed.StrokeEnd
    add 1 to sStroke
@@ -697,6 +702,8 @@ on Ed.StrokeTick pId
    end if
    if sStrokeKind is "board" then
       put Ed.BoardCell() into tCell
+   else if sStrokeKind is "view" then
+      put Ed.ViewCell() into tCell
    else
       put Ed.MapCell() into tCell
    end if
@@ -1190,17 +1197,7 @@ on Ed.MapDown pButton
    put item 1 of tCell into tC
    put item 2 of tCell into tR
    if pButton is 3 or the optionKey is down then
-      -- pick up what is there, for the thing being painted
-      if sTab is "Heights" then
-         put sMap[Ed.HTarget()][tR][tC] into sHValue
-         Ed.HShowTool
-      else if sLeft is "Properties" then
-         Ed.SelectTag codepointToNum(sMap["tags"][tR][tC])
-      else
-         Ed.SelectCode sMap["design"][tR][tC]
-      end if
-      Ed.ShowWhat
-      Ed.Status "picked from col" && tC && "row" && tR & ":" && Ed.What()
+      Ed.PickUp tC, tR
       exit Ed.MapDown
    end if
    Ed.StrokeBegin "map", "paint" && toLower(Ed.What())
@@ -1209,9 +1206,24 @@ on Ed.MapDown pButton
    Ed.StrokeTick sTickId
 end Ed.MapDown
 
+-- pick up what is in a cell, for the thing being painted
+on Ed.PickUp pC, pR
+   if sTab is "Heights" then
+      put sMap[Ed.HTarget()][pR][pC] into sHValue
+      Ed.HShowTool
+   else if sLeft is "Properties" then
+      Ed.SelectTag codepointToNum(sMap["tags"][pR][pC])
+   else
+      Ed.SelectCode sMap["design"][pR][pC]
+   end if
+   Ed.ShowWhat
+   Ed.Status "picked from col" && pC && "row" && pR & ":" && Ed.What()
+end Ed.PickUp
+
 on Ed.MapMove
    local tCell
    put Ed.MapCell() into tCell
+   if tCell is empty and sCamOn is not true then put Ed.ViewCell() into tCell     -- the 3D preview hovers too
    if tCell is not sHover then
       put tCell into sHover
       Ed.ShowHover
@@ -1375,6 +1387,9 @@ on Ed.ResetCamera
    put 0 into sYaw                           -- north up, as in the 2D map
    put 0.87 into sPitch                      -- about 50 degrees down
    put empty into sDist                      -- fitted to the map when it is built
+   put 0 into sTX                            -- what the camera looks at and turns around
+   put 0 into sTY
+   put 0 into sTZ
 end Ed.ResetCamera
 
 -- the level's lines (CellMap.LevelSegments, the same as Vibecode3D gets), in engine units
@@ -1398,6 +1413,9 @@ end Ed.Build3D
 -- engine point -> "x,y" in the viewport (empty behind the eye). Up is +y in map space.
 private function edProject pX, pY, pZ, pCY, pSY, pCP, pSP, pMidX, pMidY, pF
    local x1, z1, yc, zc, d
+   subtract sTX from pX
+   subtract sTY from pY
+   subtract sTZ from pZ
    put pX * pCY + pZ * pSY into x1
    put pZ * pCY - pX * pSY into z1
    put pY * pCP - z1 * pSP into yc
@@ -1436,9 +1454,9 @@ on Ed.Draw3D
    unlock screen
    Ed.Draw3DCursor
    if sMap["meta"]["extrude"] is "glyph" then
-      put "3D PREVIEW  " & sSegCount && "lines   glyph shapes extruded (Mesh menu)   drag: turn   shift-drag or wheel: zoom" into field "ViewTitle"
+      put "3D  " & sSegCount && "lines, glyph shapes (Mesh menu)   LEFT: paint   RIGHT held: drag turns, WASD RF move   wheel: zoom" into field "ViewTitle"
    else
-      put "3D PREVIEW  " & sSegCount && "lines   whole cells extruded (Mesh menu)   drag: turn   shift-drag or wheel: zoom" into field "ViewTitle"
+      put "3D  " & sSegCount && "lines, whole cells (Mesh menu)   LEFT: paint   RIGHT held: drag turns, WASD RF move   wheel: zoom" into field "ViewTitle"
    end if
 end Ed.Draw3D
 
@@ -1484,18 +1502,86 @@ on Ed.Draw3DCursor
    set the points of graphic "v_cursor" to tPts
 end Ed.Draw3DCursor
 
-on Ed.ViewDown
-   put the mouseLoc & comma & sYaw & comma & sPitch & comma & sDist into sDrag
-end Ed.ViewDown
+-- the ray from the eye through a point of the preview: "ex,ey,ez,dx,dy,dz" (engine units, y up)
+function Ed.ViewRay pH, pV
+   local tRect, tMidX, tMidY, tF, u, v, tCY, tSY, tCP, tSP, tOut, tPt, x1, yc, zc, y, z1
+   put the rect of graphic "ViewBack" into tRect
+   put (item 1 of tRect + item 3 of tRect) div 2 into tMidX
+   put (item 2 of tRect + item 4 of tRect) div 2 + 30 into tMidY
+   put (item 3 of tRect - item 1 of tRect) * 0.95 into tF
+   put (pH - tMidX) / tF into u
+   put (tMidY - pV) / tF into v
+   put cos(sYaw) into tCY
+   put sin(sYaw) into tSY
+   put cos(sPitch) into tCP
+   put sin(sPitch) into tSP
+   -- the eye, then the point one unit along the ray, from camera space back to the map's
+   repeat for each line tPt in ("0,0," & sDist) & return & (u & comma & v & comma & (sDist - 1))
+      put item 1 of tPt into x1
+      put item 2 of tPt into yc
+      put item 3 of tPt into zc
+      put tCP * yc + tSP * zc into y
+      put tCP * zc - tSP * yc into z1
+      put (x1 * tCY - z1 * tSY + sTX) & comma & (y + sTY) & comma & (x1 * tSY + z1 * tCY + sTZ) & comma after tOut
+   end repeat
+   return item 1 to 3 of tOut & comma & (item 4 of tOut - item 1 of tOut) & comma & (item 5 of tOut - item 2 of tOut) & comma & (item 6 of tOut - item 3 of tOut)
+end Ed.ViewRay
 
--- drag turns (left-right: around; up-down: tilt); with Shift it zooms
-on Ed.ViewMove
-   local dx, dy
-   if sDrag is empty then exit Ed.ViewMove
-   if the mouse is up then
-      put empty into sDrag
-      exit Ed.ViewMove
+-- "col,row" of the map under a point of the 3D preview (empty: nothing there)
+function Ed.ViewCellAt pH, pV
+   local tRay, tHit
+   if sDist is not a number or sMap["floor"] is not an array then return empty
+   put Ed.ViewRay(pH, pV) into tRay
+   put CellMap.Pick(sMap, item 1 of tRay, item 2 of tRay, item 3 of tRay, item 4 of tRay, item 5 of tRay, item 6 of tRay, sDist * 4 + 4000) into tHit
+   return item 1 to 2 of tHit
+end Ed.ViewCellAt
+
+function Ed.ViewCell
+   if not Ed.OverView() then return empty
+   return Ed.ViewCellAt(the mouseH, the mouseV)
+end Ed.ViewCell
+
+-- left button in the 3D preview: the same brush as on the 2D map (Alt + click picks up)
+on Ed.ViewPaintDown
+   local tCell
+   put Ed.ViewCell() into tCell
+   if tCell is empty then exit Ed.ViewPaintDown
+   if the optionKey is down then
+      Ed.PickUp item 1 of tCell, item 2 of tCell
+      exit Ed.ViewPaintDown
    end if
+   Ed.StrokeBegin "view", "paint in 3D" && toLower(Ed.What())
+   put tCell into sStrokeAt
+   Ed.PaintCell item 1 of tCell, item 2 of tCell
+   Ed.StrokeTick sTickId
+end Ed.ViewPaintDown
+
+-- right button in the 3D preview: camera mode for as long as it is held
+on Ed.CamBegin
+   focus on nothing                           -- W A S D must not be typed into the Filter
+   put true into sCamOn
+   add 1 to sCamId
+   put the milliseconds into sCamAt
+   put the mouseLoc & comma & sYaw & comma & sPitch & comma & sDist into sDrag
+   Ed.Status "camera: drag turns, W A S D move, R F up and down, Shift + drag zooms (while the right button is held)"
+   Ed.CamTick sCamId
+end Ed.CamBegin
+
+on Ed.CamEnd
+   put false into sCamOn
+   put empty into sDrag
+   add 1 to sCamId
+end Ed.CamEnd
+
+-- every 30 ms while the right button is down: turn by the drag, move by the keys held
+on Ed.CamTick pId
+   local tKeys, tNow, tMove, tF, tR, tU, dx, dy, tWas
+   if pId is not sCamId or sCamOn is not true then exit Ed.CamTick
+   if mouse(3) is not "down" then
+      Ed.CamEnd
+      exit Ed.CamTick
+   end if
+   put sYaw & comma & sPitch & comma & sDist & comma & sTX & comma & sTY & comma & sTZ into tWas
    put the mouseH - item 1 of sDrag into dx
    put the mouseV - item 2 of sDrag into dy
    if the shiftKey is down then
@@ -1504,8 +1590,64 @@ on Ed.ViewMove
       put item 3 of sDrag + dx / 150 into sYaw
       put max(0.05, min(1.57, item 4 of sDrag + dy / 150)) into sPitch
    end if
-   Ed.Draw3D
-end Ed.ViewMove
+   put the milliseconds into tNow
+   put Ed.CamKeys(the keysDown) into tKeys
+   put sDist * 0.8 * min(0.2, (tNow - sCamAt) / 1000) into tMove      -- 0.8 of the distance a second
+   put tNow into sCamAt
+   Ed.CamMove item 1 of tKeys * tMove, item 2 of tKeys * tMove, item 3 of tKeys * tMove
+   if (sYaw & comma & sPitch & comma & sDist & comma & sTX & comma & sTY & comma & sTZ) is not tWas then Ed.Draw3D
+   send "Ed.CamTick" && sCamId to me in 30 milliseconds
+end Ed.CamTick
+
+-- the keys held, as "forward,right,up" each -1, 0 or 1 (W S, D A, R F; capitals too)
+function Ed.CamKeys pKeysDown
+   local tF, tR, tU, k
+   put 0 into tF
+   put 0 into tR
+   put 0 into tU
+   repeat for each item k in pKeysDown
+      switch k
+         case 119
+         case 87
+            add 1 to tF
+            break
+         case 115
+         case 83
+            subtract 1 from tF
+            break
+         case 100
+         case 68
+            add 1 to tR
+            break
+         case 97
+         case 65
+            subtract 1 from tR
+            break
+         case 114
+         case 82
+            add 1 to tU
+            break
+         case 102
+         case 70
+            subtract 1 from tU
+            break
+      end switch
+   end repeat
+   return max(-1, min(1, tF)) & comma & max(-1, min(1, tR)) & comma & max(-1, min(1, tU))
+end Ed.CamKeys
+
+-- move what the camera looks at: forward (the way it looks, along the ground), right, up
+on Ed.CamMove pForward, pRight, pUp
+   add pForward * sin(sYaw) + pRight * cos(sYaw) to sTX
+   add pRight * sin(sYaw) - pForward * cos(sYaw) to sTZ
+   add pUp to sTY
+end Ed.CamMove
+
+-- camera mode swallows the letters (they move the camera, they are not typed)
+on keyDown pKey
+   if sCamOn is true then exit keyDown
+   pass keyDown
+end keyDown
 
 on Ed.Zoom pFactor
    if sDist is not a number then exit Ed.Zoom
@@ -1575,19 +1717,21 @@ on Ed.AnyDown pButton
    else if Ed.MapCell() is not empty and (tName is "Map2D" or tName is "Ghost" or tName is "GhostBox") then
       Ed.MapDown pButton
    else if Ed.OverView() and (tName is "ViewBack" or tName begins with "v_") then
-      Ed.ViewDown
+      if pButton is 3 then
+         Ed.CamBegin
+      else
+         Ed.ViewPaintDown
+      end if
    end if
 end Ed.AnyDown
 
 on Ed.AnyMove
    Ed.MapMove
    Ed.GhostMove
-   Ed.ViewMove
 end Ed.AnyMove
 
 on Ed.MouseUp
-   if sStrokeKind is "board" or sStrokeKind is "map" then Ed.StrokeEnd
-   put empty into sDrag
+   if sStrokeKind is "board" or sStrokeKind is "map" or sStrokeKind is "view" then Ed.StrokeEnd
 end Ed.MouseUp
 
 -------------------------------------------------------------------- menus
@@ -1906,6 +2050,22 @@ function Ed.MapPixels pC, pR
    end repeat
    return char 1 to -3 of tData
 end Ed.MapPixels
+
+-- where the middle of a cell's top is drawn in the 3D preview: "h,v"
+function Ed.TestProject pC, pR
+   local tRect, tCol, tY
+   put the rect of graphic "ViewBack" into tRect
+   put CellMap.Column(sMap, pC, pR) into tCol
+   put 0 into tY
+   if tCol is not empty then put (item 1 of tCol + CellMap.Opt(sMap, "base")) * CellMap.HU(sMap) into tY
+   return edProject(CellMap.CellX(sMap, pC), tY, CellMap.CellZ(sMap, pR), cos(sYaw), sin(sYaw), cos(sPitch), sin(sPitch), \
+         (item 1 of tRect + item 3 of tRect) div 2, (item 2 of tRect + item 4 of tRect) div 2 + 30, (item 3 of tRect - item 1 of tRect) * 0.95)
+end Ed.TestProject
+
+-- the camera as it is: "yaw,pitch,distance,x,y,z" (what it looks at)
+function Ed.TestCamera
+   return sYaw & comma & sPitch & comma & sDist & comma & sTX & comma & sTY & comma & sTZ
+end Ed.TestCamera
 
 -- the font and one cell of one layer, as they are now
 function Ed.TestFont
