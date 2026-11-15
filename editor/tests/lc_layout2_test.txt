@@ -1,0 +1,32 @@
+-- layout 2 smoke test (11 14 2026). NOTE: Build.Editor rebuilds editor/BitEditor.livecode; to keep the saved stack,
+-- copy editor/ to editor_check/ and change tD (as Opus did).
+repeat for each item tL in "lib_cellmap,build_editor,lib_bit,BitEditor"
+  if there is a stack tL then
+    if tL is not "BitEditor" then stop using stack tL
+    delete stack tL
+  end if
+end repeat
+put "//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor" into tD
+start using stack (tD & "/livecode/build_editor.livecodescript")
+Build.Editor tD
+put "built: " & the result & cr into tLog
+put "script compiles: " & (the script of stack "BitEditor" is not empty) & cr after tLog
+send "Ed.Init" to stack "BitEditor"
+put "init result: " & the result & cr after tLog
+put "state: " & value("Ed.State()", stack "BitEditor") & cr after tLog
+send "Ed.OpenMap " & quote & tD & "/maps/wizard_pool.cellmap" & quote to stack "BitEditor"
+put "opened: " & value("Ed.State()", stack "BitEditor") & cr after tLog
+send "Ed.SelectCode 65" to stack "BitEditor"
+send "Ed.PaintAt 3,3" to stack "BitEditor"
+send "Ed.LeftTab Properties" to stack "BitEditor"
+send "Ed.SelectTag 2" to stack "BitEditor"
+send "Ed.PaintAt 4,3" to stack "BitEditor"
+send "Ed.MapTab Heights" to stack "BitEditor"
+send "Ed.PaintAt 5,3" to stack "BitEditor"
+send "Ed.TestHover 5,3" to stack "BitEditor"
+send "Ed.TestTurn 0.6,0.5" to stack "BitEditor"
+put "after paint: " & value("Ed.State()", stack "BitEditor") & cr after tLog
+send "Ed.SaveMap " & quote & tD & "/tests/_layout2_saved.cellmap" & quote to stack "BitEditor"
+put "status: " & field "Status" of stack "BitEditor" & cr after tLog
+export snapshot from card 1 of stack "BitEditor" to file "C:/LIB_MCP/biteditor2.png" as PNG
+return tLog
