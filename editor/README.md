@@ -27,6 +27,32 @@ Version 1 files (below) still read; the BitEditor opens them as version 2 and sa
   `lcmcp --standalone run - < tests/lc_v2_test.txt` and `... < tests/lc_editor_test.txt`.
 - Walk it in 3D: `LIB_EDITOR/examples/E13_WalkTheMap`.
 
+## The owner's notes of 2026-11-15 (layout 2)
+- **Brush strokes.** Press and drag on the drawing board or the 2D map paints like a brush: the
+  mouse is followed every 15 ms and every cell on the line since the last look is painted, so a
+  fast drag leaves no gaps. The 2D map follows at once; the glyph list and the 3D preview catch
+  up in a pause or at release.
+- **Mirrors.** Bit > Mirror H While Drawing (left and right) and Mirror V While Drawing (top and
+  bottom), both can be on, each shows a guide line on the board; Mirror H Now / Mirror V Now copy
+  one half onto the other once.
+- **Undo.** Edit > Undo (Ctrl+Z), Redo (Ctrl+Y or Ctrl+Shift+Z). Every changed bit or cell is its
+  own numbered line of the change history, with its time; one press of the mouse, or one menu
+  command (Clear, Auto Walls, Resize ...), is one undo. Edit > Export Change History writes
+  `maps/<name>_history.txt` (a recorded path: for path and animation systems later). The history
+  starts again when a map is opened.
+- **Drawn tabs.** The native tab control is light grey on white whatever its colours, so the
+  tabs are drawn: `Theme.TabStrip` in LIB_THEME (one locked field a tab).
+- **Extrude: Glyph Shape** (Mesh menu; saved with the map as `extrude glyph`): a height raises
+  the cell's glyph, not the whole cell. `CELLMAP_V2.md` section 4b.
+- **Painting in 3D and the Clutter brush:** planned in `PLAN_3D_PAINT_AND_CLUTTER.md`.
+- **Tests with no window:** `python3 -I tests/run_headless.py tests/lc_v2_test.txt`, and in a
+  copy of the editor folder (they rebuild the stack) `--root COPY tests/lc_feedback_1115_test.txt
+  tests/lc_layout2_test.txt`. The LiveCode server has no screen: what a real window draws (the
+  tabs' look, the guide lines, the feel of a drag) is the owner's to see.
+- **Trap:** a parameter named `pLayer` does not compile: LiveCode reads it as `player`.
+- **Building while a script is mid-edit:** `Build.Editor` now refuses to save a stack whose
+  script does not compile (before, such a stack threw an error at every mouse move).
+
 ## A cell: one byte, a tag, a height (version 1)
 - **design** (0-255): which glyph of the map's 1-bit font builds this cell: its wall design. Six
   cells holding "CLAUDE" are built from the glyphs drawn for C, L, A, U, D and E in that font.

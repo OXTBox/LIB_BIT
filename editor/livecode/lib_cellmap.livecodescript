@@ -644,8 +644,13 @@ end CellMap.Column
 
 -- where an actor can stand in a cell: lines "top,air above" in hu, lowest first
 function CellMap.Levels pMap, pCol, pRow
+   return cmLevels(CellMap.Column(pMap, pCol, pRow))
+end CellMap.Levels
+
+-- the same from a column ("ground,roof bottom,roof top,slab bottom,slab top")
+private function cmLevels pColumn
    local tC, tGround, tRB, tRT, tSB, tST, tOut
-   put CellMap.Column(pMap, pCol, pRow) into tC
+   put pColumn into tC
    if tC is empty then return empty
    put item 1 of tC into tGround
    put item 2 of tC into tRB
@@ -669,7 +674,7 @@ function CellMap.Levels pMap, pCol, pRow
    if tSB is not empty then put tST & comma & kNoRoof & return after tOut
    delete the last char of tOut
    return tOut
-end CellMap.Levels
+end cmLevels
 
 -- the cell's glyph is raised: not a wall, not dug, not blank
 function CellMap.HasRelief pMap, pCol, pRow
@@ -680,6 +685,31 @@ function CellMap.HasRelief pMap, pCol, pRow
    if pMap["red"][pRow][pCol] is not 0 or item 1 of tC >= 100 then return false
    return (item 2 of tC is empty or item 2 of tC > item 1 of tC)
 end CellMap.HasRelief
+
+-- the map says `extrude glyph` and this cell's glyph can stand as the solid: the lit bits rise
+-- from the flat floor (1) to the cell's ground, the rest of the cell is flat floor
+-- (CELLMAP_V2.md section 4b). Not for blank glyphs, pits, or cells no higher than the floor.
+function CellMap.Shaped pMap, pFont, pCol, pRow
+   local tC, tBits
+   if pMap["meta"]["extrude"] is not "glyph" or pFont is not an array then return false
+   if pMap["design"][pRow][pCol] is 32 or pMap["design"][pRow][pCol] is 46 then return false
+   if pMap["red"][pRow][pCol] > 0 then return false
+   put CellMap.Column(pMap, pCol, pRow) into tC
+   if tC is empty then return false
+   if item 1 of tC <= 1 then return false
+   put pFont[pMap["design"][pRow][pCol]] into tBits
+   replace "0" with empty in tBits
+   replace comma with empty in tBits
+   return (tBits is not empty)
+end CellMap.Shaped
+
+-- the bit of the cell's glyph under engine point pX,pZ is lit
+private function cmLit pMap, pFont, pCol, pRow, pX, pZ
+   local tPX, tPZ
+   put min(15, trunc((pX / pMap["meta"]["cell"] + pMap["meta"]["cols"] / 2 - (pCol - 1)) * 16)) into tPX
+   put min(15, trunc((pZ / pMap["meta"]["cell"] + pMap["meta"]["rows"] / 2 - (pRow - 1)) * 16)) into tPZ
+   return ((item (tPZ + 1) of pFont[pMap["design"][pRow][pCol]] bitAnd (2 ^ tPX)) is not 0)
+end cmLit
 
 -- engine x / z of the centre of a column / row (decimals allowed); the map is centred on 0,0
 function CellMap.CellX pMap, pCol
@@ -705,14 +735,25 @@ end CellMap.CellAt
 -- it cannot: outside, empty space, a tag whose effect is block or locked, a rise over `step`,
 -- less than `head` of air. pFont (may be empty) adds the raised glyphs.
 function CellMap.StandAt pMap, pTags, pFont, pX, pZ, pY
-   local tCell, tCol, tRow, tLevels, tEffect, tYH, tBest, tLine, tTop, tAir, i, tPX, tPZ, tRel, tHU
+   local tCell, tCol, tRow, tLevels, tEffect, tYH, tBest, tLine, tTop, tAir, i, tRel, tHU, tShaped, tOpen, tC
    put CellMap.CellAt(pMap, pX, pZ) into tCell
    put item 1 of tCell into tCol
    put item 2 of tCell into tRow
-   put CellMap.Levels(pMap, tCol, tRow) into tLevels
+   put CellMap.Column(pMap, tCol, tRow) into tC
+   if tC is empty then return empty
+   -- extrude glyph: off the glyph's lit bits the cell is flat floor, and a "block" tag blocks only the glyph
+   put false into tOpen
+   put CellMap.Shaped(pMap, pFont, tCol, tRow) into tShaped
+   if tShaped then
+      if not cmLit(pMap, pFont, tCol, tRow, pX, pZ) then
+         put true into tOpen
+         put 1 into item 1 of tC
+      end if
+   end if
+   put cmLevels(tC) into tLevels
    if tLevels is empty then return empty
    put CellMap.TagInfo(pMap, pTags, pMap["tags"][tRow][tCol], "effect") into tEffect
-   if tEffect is "block" or tEffect is "locked" then return empty
+   if tEffect is "locked" or (tEffect is "block" and not tOpen) then return empty
    put CellMap.HU(pMap) into tHU
    put pY / tHU - CellMap.Opt(pMap, "base") into tYH
    put empty into tBest
@@ -721,11 +762,9 @@ function CellMap.StandAt pMap, pTags, pFont, pX, pZ, pY
       add 1 to i
       put item 1 of tLine into tTop
       put item 2 of tLine into tAir
-      if i is 1 and pFont is an array then
+      if i is 1 and pFont is an array and not tShaped then
          if CellMap.HasRelief(pMap, tCol, tRow) then
-            put min(15, trunc((pX / pMap["meta"]["cell"] + pMap["meta"]["cols"] / 2 - (tCol - 1)) * 16)) into tPX
-            put min(15, trunc((pZ / pMap["meta"]["cell"] + pMap["meta"]["rows"] / 2 - (tRow - 1)) * 16)) into tPZ
-            if (item (tPZ + 1) of pFont[pMap["design"][tRow][tCol]] bitAnd (2 ^ tPX)) is not 0 then
+            if cmLit(pMap, pFont, tCol, tRow, pX, pZ) then
                put CellMap.Opt(pMap, "relief") into tRel
                add tRel to tTop
                subtract tRel from tAir
@@ -857,6 +896,7 @@ end cmEdge
 function CellMap.LevelSegments pMap, pTags, pFont
    local tRows, tCols, tSlab, tRelief, tFlat, tUps, tCol, r, c, tC, tN, tGround, tRB, tRT, tSB, tST
    local tSide, dr, dc, tWater, tBase, tClass, f, tEdge, y, i, j, tAround, tCells, tCell, k, tLo, tHi
+   local tShape, tX, tZ
    local tAnyLive, tAnyRed, tAnyGreen, tRoofLo, tRoofHi, tRoofThick, tSBs, tDistinct, tKey, tRuns, tRun, a, b, tOut, tParts, tNC, tNR, tG
    put pMap["meta"]["rows"] into tRows
    put pMap["meta"]["cols"] into tCols
@@ -867,6 +907,11 @@ function CellMap.LevelSegments pMap, pTags, pFont
       put 1 into c
       repeat while c <= tCols
          put CellMap.Column(pMap, c, r) into tCol[r][c]
+         if CellMap.Shaped(pMap, pFont, c, r) then
+            -- extrude glyph: the cell itself is flat floor; its glyph is drawn as a prism below
+            put item 1 of tCol[r][c] into tShape[r][c]
+            put 1 into item 1 of tCol[r][c]
+         end if
          add 1 to c
       end repeat
       add 1 to r
@@ -925,7 +970,23 @@ function CellMap.LevelSegments pMap, pTags, pFont
          if tWater then
             put true into tUps[((c - 1) * 16) & comma & f & comma & ((r - 1) * 16) & comma & (c * 16) & comma & f & comma & (r * 16) & ",water"]
          end if
-         if pFont is an array then
+         if tShape[r][c] is not empty then
+            -- the glyph's outline at the cell's height, an upright under each of its corners
+            put tShape[r][c] into y
+            repeat for each line tEdge in CellMap.GlyphEdges(pFont[pMap["design"][r][c]])
+               if item 2 of tEdge is item 4 of tEdge then
+                  put ((c - 1) * 16 + item 1 of tEdge) & comma & ((c - 1) * 16 + item 3 of tEdge) & return after tFlat[tBase & "|" & y & "|x|" & ((r - 1) * 16 + item 2 of tEdge)]
+               else
+                  put ((r - 1) * 16 + item 2 of tEdge) & comma & ((r - 1) * 16 + item 4 of tEdge) & return after tFlat[tBase & "|" & y & "|z|" & ((c - 1) * 16 + item 1 of tEdge)]
+               end if
+               put (c - 1) * 16 + item 1 of tEdge into tX
+               put (r - 1) * 16 + item 2 of tEdge into tZ
+               put true into tUps[tX & comma & 1 & comma & tZ & comma & tX & comma & y & comma & tZ & comma & tBase]
+               put (c - 1) * 16 + item 3 of tEdge into tX
+               put (r - 1) * 16 + item 4 of tEdge into tZ
+               put true into tUps[tX & comma & 1 & comma & tZ & comma & tX & comma & y & comma & tZ & comma & tBase]
+            end repeat
+         else if pFont is an array then
             if CellMap.HasRelief(pMap, c, r) then
                put tGround + tRelief into y
                put pFont[pMap["design"][r][c]] into tG

@@ -7,13 +7,15 @@ script "build_editor"
 ## Layout 2 (the owner, 11 14 2026): left = drawing board over a tabbed list (Glyphs /
 ## Properties, one at a time); middle = the 2D map, always there, tabs 1bit / Cells / Heights;
 ## right = the 3D preview. Nothing else on the screen.
+## 11 15 2026: the tabs are drawn (Theme.TabStrip), not the native tab control (light grey on
+## white whatever the colours); Edit menu (undo); mirror guide lines on the board.
 ######################################################################################
 
 constant kW = 1280
 constant kH = 668
 
 command Build.Editor pDir
-   local tS, tPath, r, c, x, tMenu, tMenus, tItems, tCode, tClass, tPair, tClasses
+   local tS, tPath, r, c, x, tMenu, tMenus, tItems, tCode, tClass, tPair, tClasses, tErr
    put "BitEditor" into tS
    if there is a stack tS then delete stack tS
    -- LIB_THEME: one look for every stack (owner, 11 14 2026); templates reset before and after
@@ -25,12 +27,12 @@ command Build.Editor pDir
    set the textSize of stack tS to 12
    set the resizable of stack tS to false
    set the defaultStack to tS
-   set the script of card 1 of stack tS to Build.CardScript()
    Theme.MenuBar tS, 0, 0, kW, 30          -- menus sit on a light strip (the menu rule)
    put "File" & tab & "New Map...|Open Map...|-|Save Map|Save Map As...|-|Save Font|Export Tags As Text" & return & \
-         "Bit" & tab & "Flip Horizontal|Flip Vertical|Rotate 90 cw|Rotate 90 ccw|-|Shift Left|Shift Right|Shift Up|Shift Down|-|Invert|Clear|Fill" & return & \
+         "Edit" & tab & "Undo (Ctrl+Z)|Redo (Ctrl+Y)|-|Export Change History" & return & \
+         "Bit" & tab & "Mirror H While Drawing|Mirror V While Drawing|Mirror H Now (left onto right)|Mirror V Now (top onto bottom)|-|Flip Horizontal|Flip Vertical|Rotate 90 cw|Rotate 90 ccw|-|Shift Left|Shift Right|Shift Up|Shift Down|-|Invert|Clear|Fill" & return & \
          "Grid" & tab & "Size (columns, rows)...|Cell Size (engine units)...|Wall Height (engine units)...|-|Font..." & return & \
-         "Mesh" & tab & "Height: Property Default|Height: Floor (1)|Height: Step (11)|Height: Block (33)|Height: Full Wall (100)" & return & \
+         "Mesh" & tab & "Extrude: Whole Cell|Extrude: Glyph Shape|-|Height: Property Default|Height: Floor (1)|Height: Step (11)|Height: Block (33)|Height: Full Wall (100)" & return & \
          "Scene" & tab & "Reset View|Top View (as the 2D map)|From The South|From The East|-|Zoom In|Zoom Out|-|Glyph Relief On / Off" & return & \
          "Tiles" & tab & "Property Sets Height|Property Only (heights untouched)|-|Auto Walls|-|Property Colour..." & return & \
          "View" & tab & "Ghost: 100%|Ghost: 70%|Ghost: 40%|Ghost: Off" into tMenus
@@ -65,11 +67,29 @@ command Build.Editor pDir
       add 1 to r
    end repeat
    reset the templateGraphic
-   create button "LeftTabs"
-   set the style of it to "menu"
-   set the menuMode of it to "tabbed"
-   set the text of it to "Glyphs" & return & "Properties"
-   set the rect of it to 4, 296, 276, 634
+   -- the mirror guide lines (Bit menu: Mirror H / V While Drawing), over the board
+   repeat for each item tItems in "H,V"
+      create graphic ("Mirror" & tItems & "Line")
+      set the style of it to "line"
+      set the lineSize of it to 2
+      set the foregroundColor of it to Theme.Get("accent")
+      set the uThemeSkip of it to true
+      if tItems is "H" then
+         set the points of it to "136,34" & return & "136,290"
+      else
+         set the points of it to "8,162" & return & "264,162"
+      end if
+      set the visible of it to false
+   end repeat
+   -- drawn tabs over a page of the panel colour
+   create graphic "LeftFrame"
+   set the style of it to "rectangle"
+   set the filled of it to true
+   set the backgroundColor of it to Theme.Get("panel")
+   set the foregroundColor of it to Theme.Get("border")
+   set the uThemeSkip of it to true
+   set the rect of it to 4, 319, 276, 634
+   Theme.TabStrip "Left", "Glyphs" & return & "Properties", 4, 296, 100, 24
    create field "FilterLabel"
    set the rect of it to 12, 326, 56, 348
    put "Filter:" into field "FilterLabel"
@@ -111,11 +131,7 @@ command Build.Editor pDir
    set the visible of group "GlyphImages" to false
 
    ---------------------------------------------------------------- middle: the 2D map, three views
-   create button "MapTabs"
-   set the style of it to "menu"
-   set the menuMode of it to "tabbed"
-   set the text of it to "1bit" & return & "Cells" & return & "Heights"
-   set the rect of it to 282, 30, 784, 634
+   Theme.TabStrip "Map", "1bit" & return & "Cells" & return & "Heights", 288, 34, 84, 25
    create graphic "MapFrame"
    set the style of it to "rectangle"
    set the filled of it to true
@@ -186,7 +202,17 @@ command Build.Editor pDir
    end repeat
    Theme.End
    -- the behaviour, then save next to the data
+   -- If the stack script does not compile, nothing is saved: a stack without its handlers
+   -- throws an error at every mouse move (the owner met this on 11 15 2026, building while
+   -- the script was being edited). The card script goes in last, for the same reason.
    set the script of stack tS to Build.ReadText(pDir & "/livecode/editor_stack.livecodescript")
+   put the result into tErr
+   if tErr is not empty then
+      delete stack tS
+      answer "BitEditor NOT built: editor_stack.livecodescript does not compile (it may be mid-edit; try again in a minute)." & return & line 1 of tErr
+      return "ERROR: editor_stack does not compile:" && line 1 of tErr
+   end if
+   set the script of card 1 of stack tS to Build.CardScript()
    put pDir & "/BitEditor.livecode" into tPath
    set the fileName of stack tS to tPath
    save stack tS

@@ -8,3 +8,8 @@ A grid is lines of "0"/"1"; handlers return grids without a trailing return.
   take the expected answer from LiveCode when unsure.
 - Stepped `repeat with` loops overshoot their end in LiveCode 9.6.3 (see LIB_MCP CLAUDE.md);
   use `repeat while`.
+- Never name a parameter or variable `pLayer`: it does not compile (LiveCode reads `player`).
+- Editor tests with no window: `python3 -I editor/tests/run_headless.py` (see `editor/README.md`).
+  `tests/run_tests.py` starts the LIB_MCP standalone on the owner's desktop: ask first.
+- The owner may run `Build.Editor` at any moment: keep `editor/livecode/*.livecodescript`
+  compiling at every save (edit a copy, compile-check, then move it in).

@@ -71,6 +71,41 @@ check('relief: the P of PROMPT is 6 hu proud where its bits are lit', (round(cm.
 segs = cm.level_segments(m, tags, font)
 open(os.path.join(HERE, '_py_segments.txt'), 'w', newline='\n').write('\n'.join(segs) + '\n')
 open(os.path.join(HERE, '_py_walk.txt'), 'w', newline='\n').write('\n'.join(walks) + '\n')
+
+# extrude glyph (the owner, 11 15 2026): the glyph stands as the solid, the rest of the cell is floor
+import copy
+g = copy.deepcopy(m)
+g['meta']['extrude'] = 'glyph'
+check('extrude glyph: off by default, a full wall cell is not shaped', cm.shaped(m, font, 0, 0), False)
+check('extrude glyph: a wall cell with a glyph is shaped; floor and blank cells are not',
+      (cm.shaped(g, font, 0, 1), cm.shaped(g, font, 1, 1), cm.shaped(g, font, 11, 13)), (True, False, True))
+# cell col 2,row 1 is the wall piece 172 (a line across the middle): stand on the lit bits, floor beside them
+rows172 = font['glyph'][g['design'][0][1]]
+litz = [z for z in range(16) if rows172[z] >> 8 & 1]
+darkz = [z for z in range(16) if not rows172[z] >> 8 & 1]
+def gy(mm, z):
+    v = cm.ground_at(mm, tags, font, cm.cell_x(g, 2) + 0.5 / 16 * 76, cm.cell_z(g, 1) + (z + 0.5 - 8) / 16 * 76)
+    return None if v is None else round(v / k)
+check('extrude glyph: on a lit bit you stand at the wall height; beside it on the floor (a block tag blocks only the glyph)',
+      (gy(g, litz[0]), gy(g, darkz[0]), gy(m, darkz[0])), (None, 1, None))
+gs = copy.deepcopy(g)
+gs['tags'][0][1] = '.'
+check('extrude glyph: the same glyph on a walkable tag: its top is the cell height', (gy(gs, litz[0]), gy(gs, darkz[0])), (100, 1))
+m = g
+gwalks, walks_keep = [], walks
+walks = gwalks
+run('gwall', 22, 10, 4, 0, 60, y=1 * k)
+run('gmaze', 2, 6, 4, 0, 200, y=1 * k)
+run('gnorth', 12, 8, 0, -4, 200, y=1 * k)
+walks = walks_keep
+gsegs = cm.level_segments(g, tags, font)
+check('extrude glyph: the level changes, the default does not', (gsegs != segs, cm.level_segments(cm.read_map(os.path.join(maps, 'wizard_pool.cellmap')), tags, font) == segs), (True, True))
+ups = [q for q in gsegs if q.split(',')[0] == q.split(',')[3] and q.split(',')[2] == q.split(',')[5] and int(q.split(',')[0]) % 16]
+check('extrude glyph: uprights stand inside cells (under glyph corners)', len(ups) > 100)
+open(os.path.join(HERE, '_py_segments_glyph.txt'), 'w', newline='\n').write('\n'.join(gsegs) + '\n')
+open(os.path.join(HERE, '_py_walk_glyph.txt'), 'w', newline='\n').write('\n'.join(gwalks) + '\n')
+print('extrude glyph segments:', len(gsegs), ' walks:', ' / '.join(gwalks))
+
 count = {}
 for s in segs:
     count[s.split(',')[6]] = count.get(s.split(',')[6], 0) + 1

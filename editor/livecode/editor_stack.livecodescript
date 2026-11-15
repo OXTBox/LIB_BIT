@@ -5,7 +5,9 @@
 ## Data: cellmap version 2 (editor/CELLMAP_V2.md) through lib_cellmap; glyph maths: lib_bit.
 ## Built by build_editor.livecodescript; this text is the stack script it sets.
 ##
-## LEFT    top: the drawing board, 16 x 16 bits of the selected glyph (click or drag flips).
+## LEFT    top: the drawing board, 16 x 16 bits of the selected glyph. Press and drag paints
+##         like a brush (the first bit decides: lit or dark); Bit menu: Mirror H / V While
+##         Drawing (both can be on, a guide line shows each), Mirror H / V Now.
 ##         under it two tabs, one list at a time:
 ##           Glyphs      number, character, the glyph's own picture (an imageSource in the
 ##                       text), label. Click = the glyph a map click paints.
@@ -20,14 +22,25 @@
 ## RIGHT   the 3D preview: the level's lines exactly as CellMap.LevelSegments gives them to
 ##         Vibecode3D (LIB_EDITOR E13), redrawn at every change. Drag turns it, shift-drag
 ##         or the wheel zooms. The cell under the mouse in the 2D map is marked in yellow.
-## MENUS   File  Bit  Grid  Mesh  Scene  Tiles  View
+## MENUS   File  Edit  Bit  Grid  Mesh  Scene  Tiles  View
+## TABS    drawn ones (LIB_THEME Theme.TabStrip: fields "tab_<strip>_<n>"), not the native tab
+##         control, which stays light grey on white whatever the colours.
+## UNDO    Edit menu, Ctrl+Z / Ctrl+Y. Every changed bit or cell is its own numbered line of the
+##         change history (with its time: paths and animation can replay it); one press of the
+##         mouse (a stroke) or one menu command is one undo. File-less: Edit > Export Change History.
+## STROKES a press on the board or the map starts a stroke; Ed.StrokeTick follows the mouse
+##         every 15 ms and paints every cell on the line since the last look, so a fast drag
+##         leaves no gaps. The slow redraws (glyph list, 3D) wait for a pause or the release.
 ######################################################################################
 
 local sDir, sMap, sMapPath, sTags, sFont, sFontPath
 local sCode, sTag, sLeft, sTab, sPropHeight, sExtrude
-local sDirtyMap, sDirtyFont, sBoardPaint, sPx, sLast, sGhostOn, sHover
+local sDirtyMap, sDirtyFont, sBoardPaint, sPx, sGhostOn, sHover
 local sHTool, sHLayer, sHValue, sHBlocks, sCache
 local sSegs, sSegCount, sYaw, sPitch, sDist, sRelief3D, sDrag
+local sMirrorH, sMirrorV
+local sStrokeKind, sStrokeAt, sStrokeName, sStrokeN, sTickId, sDirty2D, sDirty3D, sDirtyGlyph, sHeavyAt
+local sHist, sHistN, sHistMax, sStroke
 
 constant kOff = "48,48,56"
 constant kLit = "225,225,230"
@@ -67,6 +80,10 @@ on Ed.Init
    put 100 into sHValue
    put false into sHBlocks
    put true into sRelief3D
+   put false into sMirrorH
+   put false into sMirrorV
+   put empty into sStrokeKind
+   Ed.HistClear
    put 35 into sCode
    put 35 into sTag
    Ed.ResetCamera
@@ -98,8 +115,10 @@ on Ed.OpenMap pPath
    Ed.LoadFont sMap["meta"]["font"]
    put false into sDirtyMap
    put empty into sCache
+   Ed.HistClear
    Ed.ResetCamera
    Ed.Changed
+   Ed.MenuMarks
    if tWas < 2 then
       Ed.Status "opened" && Ed.ShortName(pPath) && "(version 1: saving writes version 2, heights as floors)"
    else
@@ -275,9 +294,7 @@ on Ed.LeftTab pTab
    put empty into field "Filter"
    set the visible of field "Glyphs" to (pTab is "Glyphs")
    set the visible of field "Props" to (pTab is "Properties")
-   if the menuHistory of button "LeftTabs" is not lineOffset(pTab, the text of button "LeftTabs") then
-      set the menuHistory of button "LeftTabs" to lineOffset(pTab, the text of button "LeftTabs")
-   end if
+   Ed.TabShow "Left", pTab
    Ed.FilterChanged
    unlock screen
    -- the map follows, unless heights are being painted: glyphs read best in 1bit, properties in Cells
@@ -302,6 +319,34 @@ on Ed.ListClicked pWhich
       Ed.SelectCode word 1 of tLine + 0
    end if
 end Ed.ListClicked
+
+-- the drawn tabs (LIB_THEME Theme.TabStrip made them): a click on one arrives here
+on tabPick pStrip, pTab
+   if pStrip is "Left" then
+      Ed.LeftTab pTab
+   else if pStrip is "Map" then
+      Ed.MapTab pTab
+   end if
+end tabPick
+
+-- show which tab of a strip is selected (each tab field carries its two looks)
+on Ed.TabShow pStrip, pTab
+   local n, tF
+   put 1 into n
+   repeat while there is a field ("tab_" & pStrip & "_" & n)
+      put the long id of field ("tab_" & pStrip & "_" & n) into tF
+      if the uTabName of tF is pTab then
+         set the backgroundColor of tF to the uOnBack of tF
+         set the foregroundColor of tF to the uOnText of tF
+         set the textStyle of tF to "bold"
+      else
+         set the backgroundColor of tF to the uOffBack of tF
+         set the foregroundColor of tF to the uOffText of tF
+         set the textStyle of tF to "plain"
+      end if
+      add 1 to n
+   end repeat
+end Ed.TabShow
 
 -- the glyph a map click paints (and the one on the drawing board)
 on Ed.SelectCode pCode
@@ -358,35 +403,61 @@ on Ed.DrawGlyph
    unlock screen
 end Ed.DrawGlyph
 
--- pValue: "1", "0", or empty = flip
-on Ed.SetBit pR, pC, pValue
-   local tGrid, tLine
+-- one bit of the selected glyph, at once and cheaply (the bit's square, the font, the history);
+-- the slow followers (list picture, map, 3D) are Ed.GlyphRefresh. pValue: "1", "0", or empty = flip
+on Ed.RawBit pR, pC, pValue
+   local tGrid, tLine, tOld
+   if pR < 1 or pC < 1 or pR > 16 or pC > 16 then return empty
    put CellMap.Glyph(sFont, sCode) into tGrid
    put line pR of tGrid into tLine
+   put char pC of tLine into tOld
    if pValue is empty then
-      if char pC of tLine is "1" then
+      if tOld is "1" then
          put "0" into pValue
       else
          put "1" into pValue
       end if
    end if
-   if char pC of tLine is pValue then return pValue
+   if tOld is pValue then return pValue
    put pValue into char pC of tLine
    put tLine into line pR of tGrid
+   put CellMap.GlyphToRows(tGrid) into sFont[sCode]
+   Ed.Record "bit", sCode, pC, pR, tOld, pValue
    if pValue is "1" then
       set the backgroundColor of graphic ("b_" & pR & "_" & pC) to kLit
    else
       set the backgroundColor of graphic ("b_" & pR & "_" & pC) to kOff
    end if
-   Ed.SetGlyph tGrid
+   put true into sDirtyFont
+   put true into sDirtyGlyph
    return pValue
+end Ed.RawBit
+
+-- one bit as one undo step (tests, scripts); a drag uses the stroke handlers below
+on Ed.SetBit pR, pC, pValue
+   local tValue
+   Ed.StrokeBegin "call", "bit of glyph" && sCode
+   Ed.RawBit pR, pC, pValue
+   put the result into tValue
+   Ed.StrokeEnd
+   return tValue
 end Ed.SetBit
 
+-- the brush on the board: the bit and its mirror images
+on Ed.BoardBit pR, pC
+   local tCells, tCell
+   put pR & comma & pC into tCells
+   if sMirrorH then put return & pR & comma & (17 - pC) after tCells
+   if sMirrorV then put return & (17 - pR) & comma & pC after tCells
+   if sMirrorH and sMirrorV then put return & (17 - pR) & comma & (17 - pC) after tCells
+   repeat for each line tCell in tCells
+      Ed.RawBit item 1 of tCell, item 2 of tCell, sBoardPaint
+   end repeat
+end Ed.BoardBit
+
 -- a glyph changed: its picture in the list, the map, the ghost and the 3D relief all follow
-on Ed.SetGlyph pGrid
+on Ed.GlyphRefresh
    local n
-   put CellMap.GlyphToRows(pGrid) into sFont[sCode]
-   put true into sDirtyFont
    put empty into sCache
    Ed.GlyphImage sCode
    put lineOffset(return & format("%03d", sCode) & " ", return & field "Glyphs") into n
@@ -396,30 +467,98 @@ on Ed.SetGlyph pGrid
    end if
    Ed.MakeGhost
    Ed.Changed
+   put false into sDirtyGlyph
+   put false into sDirty2D
+   put false into sDirty3D
+end Ed.GlyphRefresh
+
+-- the whole selected glyph at once (the Bit menu): one undo step
+on Ed.SetGlyph pGrid, pLabel
+   local tOld, tNew
+   if pLabel is empty then put "glyph" && sCode into pLabel
+   put sFont[sCode] into tOld
+   put CellMap.GlyphToRows(pGrid) into tNew
+   if tOld is tNew then exit Ed.SetGlyph
+   Ed.StrokeBegin "call", pLabel
+   put tNew into sFont[sCode]
+   Ed.Record "glyph", sCode, empty, empty, tOld, tNew
+   put true into sDirtyFont
+   put true into sDirtyGlyph
+   Ed.StrokeEnd
+   Ed.DrawGlyph
 end Ed.SetGlyph
 
-on Ed.BoardDown pName
-   local tR, tC
-   set the itemDel to "_"
-   put item 2 of pName into tR
-   put item 3 of pName into tC
-   set the itemDel to comma
-   Ed.SetBit tR, tC
-   put the result into sBoardPaint       -- dragging paints the same value
+-- "row,col" of the board under the mouse, empty outside it
+function Ed.BoardCell
+   local tX, tY
+   if there is not a graphic "b_1_1" then return empty
+   put the mouseH - the left of graphic "b_1_1" into tX
+   put the mouseV - the top of graphic "b_1_1" into tY
+   if tX < 0 or tY < 0 or tX >= 256 or tY >= 256 then return empty
+   return (tY div 16 + 1) & comma & (tX div 16 + 1)
+end Ed.BoardCell
+
+-- press on the board: a stroke starts; the first bit decides what the drag paints
+on Ed.BoardDown
+   local tCell
+   put Ed.BoardCell() into tCell
+   if tCell is empty then exit Ed.BoardDown
+   Ed.StrokeBegin "board", "draw on glyph" && sCode
+   if char (item 2 of tCell) of line (item 1 of tCell) of CellMap.Glyph(sFont, sCode) is "1" then
+      put "0" into sBoardPaint
+   else
+      put "1" into sBoardPaint
+   end if
+   put tCell into sStrokeAt
+   Ed.BoardBit item 1 of tCell, item 2 of tCell
+   Ed.StrokeTick sTickId
 end Ed.BoardDown
 
-on Ed.BoardMove
-   local tName, tR, tC
-   if sBoardPaint is empty or the mouse is up then exit Ed.BoardMove
-   put the short name of the mouseControl into tName
-   if tName begins with "b_" then
-      set the itemDel to "_"
-      put item 2 of tName into tR
-      put item 3 of tName into tC
-      set the itemDel to comma
-      Ed.SetBit tR, tC, sBoardPaint
+-- Bit menu: the mirrors (H = left and right, V = top and bottom)
+on Ed.Mirror pWhich, pOn
+   if pWhich is "H" then
+      put pOn into sMirrorH
+   else
+      put pOn into sMirrorV
    end if
-end Ed.BoardMove
+   Ed.MenuMarks
+   Ed.Status "mirror while drawing: left-right" && Ed.OnOff(sMirrorH) & ", top-bottom" && Ed.OnOff(sMirrorV)
+end Ed.Mirror
+
+function Ed.OnOff pBool
+   if pBool is true then return "ON"
+   return "off"
+end Ed.OnOff
+
+-- check marks in the menus and the mirror guide lines on the board follow the settings
+on Ed.MenuMarks
+   Ed.MenuMark "Bit", "Mirror H While Drawing", sMirrorH
+   Ed.MenuMark "Bit", "Mirror V While Drawing", sMirrorV
+   Ed.MenuMark "Mesh", "Extrude: Whole Cell", (sMap["meta"]["extrude"] is not "glyph")
+   Ed.MenuMark "Mesh", "Extrude: Glyph Shape", (sMap["meta"]["extrude"] is "glyph")
+   if there is a graphic "MirrorHLine" then
+      set the visible of graphic "MirrorHLine" to (sMirrorH is true)
+      set the visible of graphic "MirrorVLine" to (sMirrorV is true)
+   end if
+end Ed.MenuMarks
+
+on Ed.MenuMark pMenu, pItem, pOn
+   local tText, tLine, tOut
+   if there is not a button pMenu then exit Ed.MenuMark
+   put the text of button pMenu into tText
+   repeat for each line tLine in tText
+      if tLine is pItem or tLine is ("!c" & pItem) then
+         if pOn then
+            put "!c" & pItem into tLine
+         else
+            put pItem into tLine
+         end if
+      end if
+      put tLine & return after tOut
+   end repeat
+   delete the last char of tOut
+   if tOut is not tText then set the text of button pMenu to tOut
+end Ed.MenuMark
 
 -- the Bit menu: whole-glyph changes through LIB_BIT
 on Ed.GlyphDo pWhat
@@ -459,13 +598,395 @@ on Ed.GlyphDo pWhat
       case "Shift Down"
          put Bit.Shift(tGrid, "down") into tGrid
          break
+      case "Mirror H While Drawing"
+         Ed.Mirror "H", not sMirrorH
+         exit Ed.GlyphDo
+      case "Mirror V While Drawing"
+         Ed.Mirror "V", not sMirrorV
+         exit Ed.GlyphDo
+      case "Mirror H Now (left onto right)"
+         put Ed.Mirrored(tGrid, "H") into tGrid
+         break
+      case "Mirror V Now (top onto bottom)"
+         put Ed.Mirrored(tGrid, "V") into tGrid
+         break
       default
          exit Ed.GlyphDo
    end switch
-   Ed.SetGlyph tGrid
-   Ed.DrawGlyph
+   Ed.SetGlyph tGrid, pWhat && "glyph" && sCode
    Ed.Status pWhat && "glyph" && sCode
 end Ed.GlyphDo
+
+-- a grid made symmetric once: H copies the left half onto the right, V the top onto the bottom
+function Ed.Mirrored pGrid, pWhich
+   local r, c, tLine
+   put 1 into r
+   repeat while r <= 16
+      if pWhich is "V" then
+         if r <= 8 then
+            put line r of pGrid into line (17 - r) of pGrid
+         end if
+      else
+         put line r of pGrid into tLine
+         put 1 into c
+         repeat while c <= 8
+            put char c of tLine into char (17 - c) of tLine
+            add 1 to c
+         end repeat
+         put tLine into line r of pGrid
+      end if
+      add 1 to r
+   end repeat
+   return pGrid
+end Ed.Mirrored
+
+-------------------------------------------------------------------- strokes: one press of the mouse, followed until it is released
+
+-- pKind: "board" or "map" (followed by Ed.StrokeTick), or "call" (one command, ended by its caller)
+on Ed.StrokeBegin pKind, pName
+   if sStrokeKind is not empty then Ed.StrokeEnd
+   add 1 to sStroke
+   add 1 to sTickId
+   put pKind into sStrokeKind
+   put pName into sStrokeName
+   put sHistN into sStrokeN
+   put empty into sStrokeAt
+   put the milliseconds into sHeavyAt
+end Ed.StrokeBegin
+
+-- every cell from pFrom (not included) to pTo (included), "a,b" a line: a fast drag leaves no gaps
+function Ed.LineCells pFrom, pTo
+   local a, b, a2, b2, da, db, tSteps, i, tOut, tA, tB, tLast
+   put item 1 of pFrom into a
+   put item 2 of pFrom into b
+   put item 1 of pTo into a2
+   put item 2 of pTo into b2
+   put a2 - a into da
+   put b2 - b into db
+   put max(abs(da), abs(db)) into tSteps
+   put pFrom into tLast
+   put 1 into i
+   repeat while i <= tSteps
+      put a + round(da * i / tSteps) into tA
+      put b + round(db * i / tSteps) into tB
+      if (tA & comma & tB) is not tLast then
+         put tA & comma & tB into tLast
+         put tLast & return after tOut
+      end if
+      add 1 to i
+   end repeat
+   delete the last char of tOut
+   return tOut
+end Ed.LineCells
+
+on Ed.StrokeCell pCell
+   if sStrokeKind is "board" then
+      Ed.BoardBit item 1 of pCell, item 2 of pCell
+   else
+      Ed.PaintCell item 1 of pCell, item 2 of pCell
+   end if
+end Ed.StrokeCell
+
+-- the brush: every 15 ms while the mouse is down, paint from the last cell to the one under the mouse
+on Ed.StrokeTick pId
+   local tCell, tStep
+   if pId is not sTickId or sStrokeKind is empty then exit Ed.StrokeTick
+   if the mouse is up then
+      Ed.StrokeEnd
+      exit Ed.StrokeTick
+   end if
+   if sStrokeKind is "board" then
+      put Ed.BoardCell() into tCell
+   else
+      put Ed.MapCell() into tCell
+   end if
+   if tCell is not empty and tCell is not sStrokeAt then
+      repeat for each line tStep in Ed.LineCells(sStrokeAt, tCell)
+         Ed.StrokeCell tStep
+      end repeat
+      put tCell into sStrokeAt
+   end if
+   Ed.StrokeShow false
+   send "Ed.StrokeTick" && sTickId to me in 15 milliseconds
+end Ed.StrokeTick
+
+-- show what the stroke changed. The 2D map at once; the slow ones (glyph list, ghost, 3D) when
+-- the stroke ends or the brush has had 200 ms without them
+on Ed.StrokeShow pFinal
+   local tHeavy
+   put (pFinal or the milliseconds - sHeavyAt > 200) into tHeavy
+   if sDirtyGlyph then
+      if tHeavy then
+         Ed.GlyphRefresh
+         put the milliseconds into sHeavyAt
+      end if
+      exit Ed.StrokeShow
+   end if
+   if sDirty2D then
+      Ed.DrawMap
+      put false into sDirty2D
+      if sHover is not empty then Ed.ShowHover
+   end if
+   if sDirty3D and tHeavy then
+      Ed.Build3D
+      Ed.Draw3D
+      put false into sDirty3D
+      put the milliseconds into sHeavyAt
+   end if
+end Ed.StrokeShow
+
+on Ed.StrokeEnd
+   local tN
+   if sStrokeKind is empty then exit Ed.StrokeEnd
+   put empty into sStrokeKind
+   add 1 to sTickId
+   Ed.StrokeShow true
+   put sHistN - sStrokeN into tN
+   if tN > 0 then Ed.Status sStrokeName & ":" && tN && "changes (Ctrl+Z undoes them)"
+end Ed.StrokeEnd
+
+-- as a drag would: pKind "board" (cells "row,col") or "map" (cells "col,row"), pCells words
+on Ed.TestStroke pKind, pCells
+   local tCell, tStep
+   Ed.StrokeBegin pKind, "test stroke"
+   put word 1 of pCells into tCell
+   if pKind is "board" then
+      if char (item 2 of tCell) of line (item 1 of tCell) of CellMap.Glyph(sFont, sCode) is "1" then
+         put "0" into sBoardPaint
+      else
+         put "1" into sBoardPaint
+      end if
+   end if
+   put tCell into sStrokeAt
+   Ed.StrokeCell tCell
+   repeat for each word tCell in word 2 to -1 of pCells
+      repeat for each line tStep in Ed.LineCells(sStrokeAt, tCell)
+         Ed.StrokeCell tStep
+      end repeat
+      put tCell into sStrokeAt
+   end repeat
+   Ed.StrokeEnd
+end Ed.TestStroke
+
+-------------------------------------------------------------------- the change history and undo
+
+on Ed.HistClear
+   put empty into sHist
+   put 0 into sHistN
+   put 0 into sHistMax
+   put 0 into sStroke
+end Ed.HistClear
+
+-- one change = one numbered line of the history. pKind: "cell" (pWhat = the layer, pA = col,
+-- pB = row), "bit" (pWhat = the glyph, pA = col, pB = row), "glyph" (a whole glyph's rows),
+-- "map" (the whole map before and after: size, walls, options)
+on Ed.Record pKind, pWhat, pA, pB, pOld, pNew
+   add 1 to sHistN
+   put empty into sHist[sHistN]
+   put sStroke into sHist[sHistN]["stroke"]
+   put sStrokeName into sHist[sHistN]["name"]
+   put the milliseconds into sHist[sHistN]["ms"]
+   put pKind into sHist[sHistN]["kind"]
+   put pWhat into sHist[sHistN]["what"]
+   put pA into sHist[sHistN]["a"]
+   put pB into sHist[sHistN]["b"]
+   put pOld into sHist[sHistN]["old"]
+   put pNew into sHist[sHistN]["new"]
+   put sHistN into sHistMax              -- a new change ends what could be redone
+end Ed.Record
+
+-- a cell of a layer (design, tags, floor, ceiling, red, green, blue), recorded
+on Ed.SetCell pWhich, pC, pR, pValue
+   local tOld
+   if pC < 1 or pR < 1 or pC > sMap["meta"]["cols"] or pR > sMap["meta"]["rows"] then exit Ed.SetCell
+   put sMap[pWhich][pR][pC] into tOld
+   if pWhich is "tags" then
+      if tOld is empty or pValue is empty then
+         if tOld is pValue then
+            exit Ed.SetCell
+         end if
+      else if codepointToNum(tOld) is codepointToNum(pValue) then
+         exit Ed.SetCell                    -- by number: "a" is not "A" here
+      end if
+   else if tOld is pValue then
+      exit Ed.SetCell
+   end if
+   put pValue into sMap[pWhich][pR][pC]
+   Ed.Record "cell", pWhich, pC, pR, tOld, pValue
+   put true into sDirtyMap
+   put true into sDirty2D
+   put true into sDirty3D
+end Ed.SetCell
+
+-- after a whole-map command: one undo step holding the map as it was (pOld) and as it is
+on Ed.MapSnap pName, pOld
+   Ed.StrokeBegin "call", pName
+   Ed.Record "map", empty, empty, empty, pOld, sMap
+   put true into sDirtyMap
+   put true into sDirty2D
+   put true into sDirty3D
+   Ed.StrokeEnd
+end Ed.MapSnap
+
+-- put one history line's old or new value back; says what kind of thing changed
+private command edApply pN, pWhich
+   local tGrid, tLine, tWas
+   switch sHist[pN]["kind"]
+      case "cell"
+         put sHist[pN][pWhich] into sMap[sHist[pN]["what"]][sHist[pN]["b"]][sHist[pN]["a"]]
+         return "map"
+      case "bit"
+         put CellMap.Glyph(sFont, sHist[pN]["what"]) into tGrid
+         put line sHist[pN]["b"] of tGrid into tLine
+         put sHist[pN][pWhich] into char sHist[pN]["a"] of tLine
+         put tLine into line sHist[pN]["b"] of tGrid
+         put CellMap.GlyphToRows(tGrid) into sFont[sHist[pN]["what"]]
+         return "font" && sHist[pN]["what"]
+      case "glyph"
+         put sHist[pN][pWhich] into sFont[sHist[pN]["what"]]
+         return "font" && sHist[pN]["what"]
+      case "map"
+         put sHist[pN][pWhich] into sMap
+         return "whole"
+   end switch
+   return empty
+end edApply
+
+-- the last stroke (or command) back to what it was: every one of its changes, newest first
+on Ed.Undo
+   local tStroke, tSeen, tName, tCount
+   if sStrokeKind is not empty then Ed.StrokeEnd
+   if sHistN < 1 then
+      Ed.Status "nothing to undo"
+      exit Ed.Undo
+   end if
+   put sHist[sHistN]["stroke"] into tStroke
+   put sHist[sHistN]["name"] into tName
+   put 0 into tCount
+   repeat while sHistN >= 1
+      if sHist[sHistN]["stroke"] is not tStroke then exit repeat
+      edApply sHistN, "old"
+      put true into tSeen[the result]
+      subtract 1 from sHistN
+      add 1 to tCount
+   end repeat
+   Ed.AfterHistory tSeen
+   Ed.Status "undid:" && tName && "(" & tCount && "changes; Ctrl+Y brings them back)"
+end Ed.Undo
+
+on Ed.Redo
+   local tStroke, tSeen, tName, tCount
+   if sStrokeKind is not empty then Ed.StrokeEnd
+   if sHistN >= sHistMax then
+      Ed.Status "nothing to redo"
+      exit Ed.Redo
+   end if
+   put sHist[sHistN + 1]["stroke"] into tStroke
+   put sHist[sHistN + 1]["name"] into tName
+   put 0 into tCount
+   repeat while sHistN < sHistMax
+      if sHist[sHistN + 1]["stroke"] is not tStroke then exit repeat
+      add 1 to sHistN
+      edApply sHistN, "new"
+      put true into tSeen[the result]
+      add 1 to tCount
+   end repeat
+   Ed.AfterHistory tSeen
+   Ed.Status "redid:" && tName && "(" & tCount && "changes)"
+end Ed.Redo
+
+-- redraw what undo or redo touched: glyph pictures, the board, the map, the 3D preview
+on Ed.AfterHistory pSeen
+   local tKey, tFont
+   put false into tFont
+   repeat for each key tKey in pSeen
+      if word 1 of tKey is "font" then
+         put true into tFont
+         Ed.GlyphImage word 2 of tKey
+      end if
+      if tKey is "map" or tKey is "whole" then put true into sDirtyMap
+      if tKey is "whole" then put empty into sHover
+   end repeat
+   if tFont then
+      put true into sDirtyFont
+      put empty into sCache
+      Ed.FillGlyphs
+      Ed.DrawGlyph
+   end if
+   Ed.Changed
+   Ed.MakeGhost
+   Ed.MenuMarks
+   if sHover is not empty then Ed.ShowHover
+   put false into sDirtyGlyph
+   put false into sDirty2D
+   put false into sDirty3D
+end Ed.AfterHistory
+
+-- "done,undone" lines of the history, for tests and the status line
+function Ed.HistCount
+   return sHistN & comma & (sHistMax - sHistN)
+end Ed.HistCount
+
+-- the history as text, one change a line (tab between): number, stroke, time in ms since the
+-- first change, kind, what, a, b, old, new, stroke name. Paths and animation can replay it.
+function Ed.HistText
+   local n, tOut, tT0, tOld, tNew
+   put sHist[1]["ms"] into tT0
+   put "# BitEditor change history: n, stroke, ms, kind, what (layer or glyph), col, row, old, new, stroke name" & return into tOut
+   put 1 into n
+   repeat while n <= sHistN
+      put sHist[n]["old"] into tOld
+      put sHist[n]["new"] into tNew
+      if sHist[n]["kind"] is "map" then
+         put "(whole map)" into tOld
+         put "(whole map)" into tNew
+      else if sHist[n]["what"] is "tags" then
+         put codepointToNum(tOld) into tOld          -- tag characters as numbers (a space or # would hide)
+         put codepointToNum(tNew) into tNew
+      end if
+      put n & tab & sHist[n]["stroke"] & tab & (sHist[n]["ms"] - tT0) & tab & sHist[n]["kind"] & tab & sHist[n]["what"] & tab & sHist[n]["a"] & tab & sHist[n]["b"] & tab & \
+            tOld & tab & tNew & tab & sHist[n]["name"] & return after tOut
+      add 1 to n
+   end repeat
+   return tOut
+end Ed.HistText
+
+on Ed.EditMenu pItem
+   local tFile
+   switch pItem
+      case "Undo (Ctrl+Z)"
+         Ed.Undo
+         break
+      case "Redo (Ctrl+Y)"
+         Ed.Redo
+         break
+      case "Export Change History"
+         put sDir & "/maps/" & sMap["meta"]["name"] & "_history.txt" into tFile
+         put textEncode(Ed.HistText(), "UTF-8") into URL ("binfile:" & tFile)
+         Ed.Status "wrote" && Ed.ShortName(tFile) && "(" & sHistN && "changes)"
+         break
+   end switch
+end Ed.EditMenu
+
+-- Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z (typing in the Filter keeps its own keys)
+on commandKeyDown pKey
+   local tFocus
+   put the focusedObject into tFocus
+   if tFocus is not empty then
+      if word 1 of tFocus is "field" then
+         if the short name of tFocus is "Filter" then pass commandKeyDown
+      end if
+   end if
+   if pKey is "z" and the shiftKey is down then
+      Ed.Redo
+   else if pKey is "z" then
+      Ed.Undo
+   else if pKey is "y" then
+      Ed.Redo
+   else
+      pass commandKeyDown
+   end if
+end commandKeyDown
 
 -------------------------------------------------------------------- middle: the 2D map, one picture, three views
 
@@ -613,9 +1134,7 @@ on Ed.MapTab pTab
    if pTab is not among the items of "1bit,Cells,Heights" then put "1bit" into pTab
    put pTab into sTab
    lock screen
-   if the menuHistory of button "MapTabs" is not lineOffset(pTab, the text of button "MapTabs") then
-      set the menuHistory of button "MapTabs" to lineOffset(pTab, the text of button "MapTabs")
-   end if
+   Ed.TabShow "Map", pTab
    set the visible of group "HeightTools" to (pTab is "Heights")
    Ed.DrawMap
    Ed.HShowTool
@@ -684,8 +1203,10 @@ on Ed.MapDown pButton
       Ed.Status "picked from col" && tC && "row" && tR & ":" && Ed.What()
       exit Ed.MapDown
    end if
-   put tCell into sLast
-   Ed.PaintAt tC, tR
+   Ed.StrokeBegin "map", "paint" && toLower(Ed.What())
+   put tCell into sStrokeAt
+   Ed.PaintCell tC, tR
+   Ed.StrokeTick sTickId
 end Ed.MapDown
 
 on Ed.MapMove
@@ -695,11 +1216,6 @@ on Ed.MapMove
       put tCell into sHover
       Ed.ShowHover
       Ed.Draw3DCursor
-   end if
-   if tCell is empty then exit Ed.MapMove
-   if sLast is not empty and the mouse is down and tCell is not sLast then
-      put tCell into sLast
-      Ed.PaintAt item 1 of tCell, item 2 of tCell
    end if
 end Ed.MapMove
 
@@ -718,28 +1234,32 @@ on Ed.ShowHover
          sMap["design"][tR][tC] & "  " & Ed.HeightsOf(tC, tR) into line 2 of field "PaintInfo"
 end Ed.ShowHover
 
--- one click or one cell of a drag: a height, a property or a glyph (see Ed.What)
+-- one click as one undo step (tests, scripts); a drag is a stroke of Ed.PaintCell
 on Ed.PaintAt pC, pR
+   Ed.StrokeBegin "call", "paint" && toLower(Ed.What())
+   Ed.PaintCell pC, pR
+   Ed.StrokeEnd
+end Ed.PaintAt
+
+-- one cell of a stroke: a height, a property or a glyph (see Ed.What)
+on Ed.PaintCell pC, pR
    local tChar
    if sTab is "Heights" then
-      CellMap.Set sMap, Ed.HTarget(), pC, pR, sHValue
+      Ed.SetCell Ed.HTarget(), pC, pR, sHValue
    else if sLeft is "Properties" then
       put sTags[sTag]["char"] into tChar
       if tChar is empty then
          Ed.Status "property" && sTag && "has no character: it cannot be written in a map (pick one from 32 up)"
-         exit Ed.PaintAt
+         exit Ed.PaintCell
       end if
-      CellMap.Set sMap, "tags", pC, pR, tChar
+      Ed.SetCell "tags", pC, pR, tChar
       if sPropHeight then
-         CellMap.Set sMap, "floor", pC, pR, Ed.PropFloor()
+         Ed.SetCell "floor", pC, pR, Ed.PropFloor()
       end if
    else
-      CellMap.Set sMap, "design", pC, pR, sCode
+      Ed.SetCell "design", pC, pR, sCode
    end if
-   put true into sDirtyMap
-   Ed.Changed
-   if sHover is not empty then Ed.ShowHover
-end Ed.PaintAt
+end Ed.PaintCell
 
 -------------------------------------------------------------------- the ghost: the glyph about to be painted
 
@@ -862,7 +1382,7 @@ on Ed.Build3D
    local tSegs, tSeg, tE, tFontUsed, tW
    if sMap["floor"] is not an array then exit Ed.Build3D
    put empty into sSegs
-   if sRelief3D then put sFont into tFontUsed
+   if sRelief3D or sMap["meta"]["extrude"] is "glyph" then put sFont into tFontUsed
    put CellMap.LevelSegments(sMap, sTags, tFontUsed) into tSegs
    put the number of lines of tSegs into sSegCount
    repeat for each line tSeg in tSegs
@@ -915,7 +1435,11 @@ on Ed.Draw3D
    end repeat
    unlock screen
    Ed.Draw3DCursor
-   put "3D PREVIEW  " & sSegCount && "lines   drag: turn   shift-drag or wheel: zoom   Scene menu: views" into field "ViewTitle"
+   if sMap["meta"]["extrude"] is "glyph" then
+      put "3D PREVIEW  " & sSegCount && "lines   glyph shapes extruded (Mesh menu)   drag: turn   shift-drag or wheel: zoom" into field "ViewTitle"
+   else
+      put "3D PREVIEW  " & sSegCount && "lines   whole cells extruded (Mesh menu)   drag: turn   shift-drag or wheel: zoom" into field "ViewTitle"
+   end if
 end Ed.Draw3D
 
 -- the cell under the mouse in the 2D map, marked in the 3D preview: its square on its own
@@ -1044,8 +1568,8 @@ end Ed.SceneMenu
 on Ed.AnyDown pButton
    local tName
    put the short name of the target into tName
-   if tName begins with "b_" then
-      Ed.BoardDown tName
+   if Ed.BoardCell() is not empty and (tName begins with "b_" or tName begins with "Mirror") then
+      Ed.BoardDown
    else if tName begins with "hs_" then
       Ed.HSwatch tName
    else if Ed.MapCell() is not empty and (tName is "Map2D" or tName is "Ghost" or tName is "GhostBox") then
@@ -1056,15 +1580,13 @@ on Ed.AnyDown pButton
 end Ed.AnyDown
 
 on Ed.AnyMove
-   Ed.BoardMove
    Ed.MapMove
    Ed.GhostMove
    Ed.ViewMove
 end Ed.AnyMove
 
 on Ed.MouseUp
-   put empty into sBoardPaint
-   put empty into sLast
+   if sStrokeKind is "board" or sStrokeKind is "map" then Ed.StrokeEnd
    put empty into sDrag
 end Ed.MouseUp
 
@@ -1072,7 +1594,8 @@ end Ed.MouseUp
 
 -- new size, keeping what fits; new cells are empty space
 on Ed.Resize pCols, pRows
-   local tNew, r, c, tKey
+   local tNew, r, c, tKey, tOld
+   put sMap into tOld
    put CellMap.New(pCols, pRows, sMap["meta"]["name"]) into tNew
    CellMap.Upgrade tNew
    repeat for each key tKey in sMap["meta"]
@@ -1103,10 +1626,9 @@ on Ed.Resize pCols, pRows
       add 1 to r
    end repeat
    put tNew into sMap
-   put true into sDirtyMap
    put empty into sHover
    Ed.ResetCamera
-   Ed.Changed
+   Ed.MapSnap "resize to" && pCols & "x" & pRows, tOld
    Ed.MakeGhost
 end Ed.Resize
 
@@ -1121,14 +1643,11 @@ on menuPick pItem
    replace "!c" with empty in pItem
    replace "!n" with empty in pItem
    switch tMenu
-      case "MapTabs"
-         Ed.MapTab pItem
-         break
-      case "LeftTabs"
-         Ed.LeftTab pItem
-         break
       case "File"
          Ed.FileMenu pItem
+         break
+      case "Edit"
+         Ed.EditMenu pItem
          break
       case "Bit"
          Ed.GlyphDo pItem
@@ -1163,6 +1682,7 @@ on Ed.FileMenu pItem
          put sFont["meta"]["name"] into sMap["meta"]["font"]
          CellMap.Upgrade sMap
          put sDir & "/maps/untitled.cellmap" into sMapPath
+         Ed.HistClear
          put empty into sHover
          Ed.ResetCamera
          Ed.Changed
@@ -1198,6 +1718,8 @@ on Ed.FileMenu pItem
 end Ed.FileMenu
 
 on Ed.GridMenu pItem
+   local tOld
+   put sMap into tOld
    switch pItem
       case "Size (columns, rows)..."
          ask "Columns and rows" with sMap["meta"]["cols"] & comma & sMap["meta"]["rows"]
@@ -1219,14 +1741,35 @@ on Ed.GridMenu pItem
          Ed.MakeGhost
          break
    end switch
-   put true into sDirtyMap
-   Ed.Changed
+   if pItem is not "Size (columns, rows)..." then
+      if sMap["meta"]["cell"] is not tOld["meta"]["cell"] or sMap["meta"]["wallH"] is not tOld["meta"]["wallH"] or sMap["meta"]["font"] is not tOld["meta"]["font"] then
+         Ed.MapSnap toLower(pItem), tOld
+      end if
+   end if
    Ed.Status "cell" && sMap["meta"]["cell"] && " wall" && sMap["meta"]["wallH"] && " font" && sMap["meta"]["font"]
 end Ed.GridMenu
 
 -- the height a property brings when it is painted
 on Ed.MeshMenu pItem
+   local tOld
    switch pItem
+      case "Extrude: Whole Cell"
+      case "Extrude: Glyph Shape"
+         -- what a height raises: the whole cell (a block), or the cell's glyph as drawn
+         put sMap into tOld
+         if pItem is "Extrude: Glyph Shape" then
+            put "glyph" into sMap["meta"]["extrude"]
+         else
+            delete variable sMap["meta"]["extrude"]
+         end if
+         if (sMap["meta"]["extrude"] is "glyph") is not (tOld["meta"]["extrude"] is "glyph") then Ed.MapSnap toLower(pItem), tOld
+         Ed.MenuMarks
+         if pItem is "Extrude: Glyph Shape" then
+            Ed.Status "extrude: glyph shape. A raised cell lifts its glyph's lit bits; the rest of the cell stays floor (saved with the map)"
+         else
+            Ed.Status "extrude: whole cell. A raised cell is a block; glyphs are low relief on floors"
+         end if
+         exit Ed.MeshMenu
       case "Height: Property Default"
          put "tag" into sExtrude
          break
@@ -1250,7 +1793,7 @@ on Ed.MeshMenu pItem
 end Ed.MeshMenu
 
 on Ed.TilesMenu pItem
-   local tColour
+   local tColour, tOld
    switch pItem
       case "Property Sets Height"
          put true into sPropHeight
@@ -1260,9 +1803,9 @@ on Ed.TilesMenu pItem
          break
       case "Auto Walls"
          -- every plain # wall takes the Aquarius line piece that joins its neighbours
+         put sMap into tOld
          CellMap.AutoWalls sMap
-         put true into sDirtyMap
-         Ed.Changed
+         Ed.MapSnap "auto walls", tOld
          Ed.Status "auto walls: the walls are joined line pieces now"
          exit Ed.TilesMenu
       case "Property Colour..."
@@ -1334,7 +1877,7 @@ end Ed.Contrast
 -- the state in one line
 function Ed.State
    return Ed.ShortName(sMapPath) & "|" & sMap["meta"]["cols"] & "x" & sMap["meta"]["rows"] & "|left " & sLeft & "|glyph " & sCode & "|prop " & sTag & \
-         "|map " & sTab & "|h " & sHTool & "," & sHLayer & "," & sHValue & "," & sHBlocks & "|px " & sPx & "|3d " & sSegCount & " lines|" & sDirtyMap & "," & sDirtyFont & "|" & Ed.What()
+         "|map " & sTab & "|h " & sHTool & "," & sHLayer & "," & sHValue & "," & sHBlocks & "|px " & sPx & "|3d " & sSegCount & " lines|" & sDirtyMap & "," & sDirtyFont & "|hist " & Ed.HistCount() & "|" & Ed.What()
 end Ed.State
 
 -- the colours really drawn in one cell of the 2D map, most first: "r,g,b xN; ..."
@@ -1363,6 +1906,15 @@ function Ed.MapPixels pC, pR
    end repeat
    return char 1 to -3 of tData
 end Ed.MapPixels
+
+-- the font and one cell of one layer, as they are now
+function Ed.TestFont
+   return sFont
+end Ed.TestFont
+
+function Ed.TestCell pWhich, pC, pR
+   return sMap[pWhich][pR][pC]
+end Ed.TestCell
 
 -- as if the mouse were over cell pC,pR of the 2D map (the 3D mark follows)
 on Ed.TestHover pC, pR
