@@ -488,6 +488,45 @@ def has_relief(m, r, c):
     return m['red'][r][c] == 0 and col[0] < 100 and (col[1] is None or col[1] > col[0])
 
 
+def shaped(m, font, r, c):
+    """the map says `extrude glyph` and this cell's glyph can stand as the solid: the lit bits rise
+    from the flat floor (1) to the cell's ground, the rest of the cell is flat floor
+    (CELLMAP_V2.md section 4b). Not for blank glyphs, pits, or cells no higher than the floor."""
+    if m['meta'].get('extrude') != 'glyph' or font is None:
+        return False
+    if not (0 <= r < m['meta']['rows'] and 0 <= c < m['meta']['cols']):
+        return False
+    if m['design'][r][c] in (32, 46) or m['red'][r][c] > 0:
+        return False
+    col = column(m, r, c)
+    if col is None or col[0] <= 1:
+        return False
+    return any(font['glyph'].get(m['design'][r][c], [0] * 16))
+
+
+def levels_of(col):
+    """levels() from a column"""
+    if col is None:
+        return []
+    ground, rb, rt, sb, st = col
+    out = []
+    if rb is None:
+        out.append((ground, (sb - ground) if sb is not None else NO_ROOF))
+    else:
+        if rb > ground:
+            out.append((ground, rb - ground))
+        out.append((rt, (sb - rt) if sb is not None else NO_ROOF))
+    if sb is not None:
+        out.append((st, NO_ROOF))
+    return out
+
+
+def lit_at(m, font, r, c, x, z):
+    px = min(15, int((x / m['meta']['cell'] + m['meta']['cols'] / 2 - c) * 16))
+    pz = min(15, int((z / m['meta']['cell'] + m['meta']['rows'] / 2 - r) * 16))
+    return bool(font['glyph'].get(m['design'][r][c], [0] * 16)[pz] >> px & 1)
+
+
 def cell_x(m, col):
     """engine x of the centre of column col (1-based, decimals allowed)"""
     return (col - 0.5 - m['meta']['cols'] / 2) * m['meta']['cell']
@@ -508,6 +547,35 @@ def hu(m):
     return m['meta']['wallH'] / 100.0
 
 
+def pick(m, ex, ey, ez, dx, dy, dz, max_len):
+    """the cell a ray meets first (painting in a 3D view): (col, row, what), what = ground, roof,
+    slab or void (empty space inside the map, met at the flat floor's height); None = nothing.
+    The ray starts at ex,ey,ez (engine units, y up), goes along dx,dy,dz for max_len units,
+    looked at every eighth of a cell."""
+    length = (dx * dx + dy * dy + dz * dz) ** 0.5
+    if length == 0:
+        return None
+    step = m['meta']['cell'] / 8
+    k, base = hu(m), opt(m, 'base')
+    for i in range(int(max_len / step) + 1):
+        x, y, z = ex + dx * (i * step / length), ey + dy * (i * step / length), ez + dz * (i * step / length)
+        yh = y / k - base
+        c, r = cell_at(m, x, z)
+        inside = 1 <= c <= m['meta']['cols'] and 1 <= r <= m['meta']['rows']
+        col = column(m, r - 1, c - 1) if inside else None
+        if col is None:
+            if yh <= 1:
+                return (c, r, 'void') if inside else None
+            continue
+        if yh <= col[0]:
+            return c, r, 'ground'
+        if col[1] is not None and col[1] <= yh <= max(col[2], col[1] + 4):
+            return c, r, 'roof'
+        if col[3] is not None and col[3] <= yh <= col[4]:
+            return c, r, 'slab'
+    return None
+
+
 def stand_at(m, tags, font, x, z, y):
     """the height (engine units) an actor now at height y would stand at on point x,z; None = cannot.
     Blocked by: outside, empty space, a tag whose effect is block or locked, a rise over `step`,
@@ -515,16 +583,23 @@ def stand_at(m, tags, font, x, z, y):
     import math
     col, row = cell_at(m, x, z)
     r, c = row - 1, col - 1
-    lv = levels(m, r, c)
-    if not lv or tag_info(m, tags, m['tags'][r][c], 'effect') in ('block', 'locked'):
+    col_ = column(m, r, c)
+    if col_ is None:
+        return None
+    is_shaped = shaped(m, font, r, c)
+    is_open = False                 # extrude glyph: off the lit bits the cell is flat floor
+    if is_shaped and not lit_at(m, font, r, c, x, z):
+        is_open = True
+        col_ = (1,) + tuple(col_[1:])
+    lv = levels_of(col_)
+    effect = tag_info(m, tags, m['tags'][r][c], 'effect')
+    if not lv or effect == 'locked' or (effect == 'block' and not is_open):
         return None
     yh = y / hu(m) - opt(m, 'base')
     best = None
     for i, (top, air) in enumerate(lv):
-        if i == 0 and font is not None and has_relief(m, r, c):
-            px = min(15, int((x / m['meta']['cell'] + m['meta']['cols'] / 2 - c) * 16))
-            pz = min(15, int((z / m['meta']['cell'] + m['meta']['rows'] / 2 - r) * 16))
-            if font['glyph'].get(m['design'][r][c], [0] * 16)[pz] >> px & 1:
+        if i == 0 and font is not None and not is_shaped and has_relief(m, r, c):
+            if lit_at(m, font, r, c, x, z):
                 top += opt(m, 'relief')
                 air -= opt(m, 'relief')
         if top <= yh + opt(m, 'step') + 1e-6 and air >= opt(m, 'head'):
@@ -591,6 +666,12 @@ def level_segments(m, tags=None, font=None):
     flat = {}                               # (class, y, axis, fixed) -> [(a, b)]
     ups = set()
     C = [[column(m, r, c) for c in range(cols)] for r in range(rows)]
+    shape = {}                              # extrude glyph: the cell is flat floor, its glyph a prism
+    for r in range(rows):
+        for c in range(cols):
+            if shaped(m, font, r, c):
+                shape[r, c] = C[r][c][0]
+                C[r][c] = (1,) + tuple(C[r][c][1:])
 
     def col_at(r, c):
         return C[r][c] if 0 <= r < rows and 0 <= c < cols else None
@@ -638,7 +719,16 @@ def level_segments(m, tags=None, font=None):
             if water:
                 f = m['floor'][r][c]
                 ups.add('%d,%d,%d,%d,%d,%d,water' % (c * 16, f, r * 16, c * 16 + 16, f, r * 16 + 16))
-            if font is not None and has_relief(m, r, c):
+            if (r, c) in shape:
+                y, cls = shape[r, c], base_class(r, c)
+                for x1, z1, x2, z2 in glyph_edges(font['glyph'].get(m['design'][r][c], [0] * 16)):
+                    if z1 == z2:
+                        flat.setdefault((cls, y, 'x', r * 16 + z1), []).append((c * 16 + x1, c * 16 + x2))
+                    else:
+                        flat.setdefault((cls, y, 'z', c * 16 + x1), []).append((r * 16 + z1, r * 16 + z2))
+                    for px, pz in ((x1, z1), (x2, z2)):
+                        ups.add('%d,%d,%d,%d,%d,%d,%s' % (c * 16 + px, 1, r * 16 + pz, c * 16 + px, y, r * 16 + pz, cls))
+            elif font is not None and has_relief(m, r, c):
                 y = ground + relief
                 for x1, z1, x2, z2 in glyph_edges(font['glyph'].get(m['design'][r][c], [0] * 16)):
                     if z1 == z2:

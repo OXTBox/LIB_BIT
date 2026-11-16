@@ -56,4 +56,43 @@ put "walk: " & tSteps & " steps, " & format("%.2f", (the milliseconds - tT) / tS
 put CellMap.ReadText(tDir & "tests/_py_walk.txt") into tPy
 put "walks same as Python's: " & (tWalks is tPy) & return after tLog
 if tWalks is not tPy then put tWalks after tLog
+-- pick (11 15 2026): the same rays as Python's
+put empty into tPicks
+set the itemDel to "|"
+repeat for each line tRay in "yard down|9|11|0|2000|0|0|-1|0" & return & "pool down|6|13|0|2000|0|0|-1|0" & return & "cloud down|15|4|0|2000|0|0|-1|0" & return & \
+    "tower wall from the south|19|12|0|300|0|0|-0.2|-1" & return & "yard slanted|12|16|0|900|700|0.1|-1|-0.9" & return & \
+    "over the east wall|30|9|0|500|0|-1|-0.5|0" & return & "misses to the sky|12|9|0|100|0|0|1|0" & return & "outside|40|40|0|500|0|0|-1|0"
+  put item 1 of tRay & "|" & CellMap.Pick(tMap, CellMap.CellX(tMap, item 2 of tRay) + item 4 of tRay, item 5 of tRay, CellMap.CellZ(tMap, item 3 of tRay) + item 6 of tRay, \
+      item 7 of tRay, item 8 of tRay, item 9 of tRay, 6000) & return after tPicks
+end repeat
+set the itemDel to comma
+put CellMap.ReadText(tDir & "tests/_py_pick.txt") into tPy
+put "picks same as Python's: " & (tPicks is tPy) & return after tLog
+if tPicks is not tPy then put tPicks after tLog
+-- extrude glyph (11 15 2026): the same map with the glyphs standing as the solids
+put "glyph" into tMap["meta"]["extrude"]
+put "shaped: " & CellMap.Shaped(tMap, tFont, 2, 1) && CellMap.Shaped(tMap, tFont, 2, 2) && CellMap.Shaped(tMap, empty, 2, 1) & return after tLog
+put CellMap.LevelSegments(tMap, tTags, tFont) into tSegs
+put CellMap.ReadText(tDir & "tests/_py_segments_glyph.txt") into tPy
+if the last char of tPy is return then delete the last char of tPy
+sort lines of tPy
+put "extrude glyph segments: " & the number of lines of tSegs & ", same as Python's: " & (tSegs is tPy) & return after tLog
+put empty into tWalks
+repeat for each line tRun in "gwall,22,10,4,0,60,1" & return & "gmaze,2,6,4,0,200,1" & return & "gnorth,12,8,0,-4,200,1"
+  put CellMap.CellX(tMap, item 2 of tRun) into x
+  put CellMap.CellZ(tMap, item 3 of tRun) into z
+  put item 7 of tRun * k into y
+  put empty into e
+  repeat item 6 of tRun times
+    put CellMap.Walk(tMap, tTags, tFont, x, z, y, item 4 of tRun, item 5 of tRun) into tW
+    put item 1 of tW into x
+    put item 2 of tW into z
+    put item 3 of tW into y
+    put item 4 of tW into e
+  end repeat
+  put item 1 of tRun & "|" & CellMap.CellAt(tMap, x, z) & "|" & format("%.2f", y / k) & "|" & e & return after tWalks
+end repeat
+put CellMap.ReadText(tDir & "tests/_py_walk_glyph.txt") into tPy
+put "extrude glyph walks same as Python's: " & (tWalks is tPy) & return after tLog
+if tWalks is not tPy then put tWalks after tLog
 return tLog

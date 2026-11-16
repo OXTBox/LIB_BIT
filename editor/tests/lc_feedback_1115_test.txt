@@ -1,0 +1,139 @@
+-- the owner's notes of 11 15 2026: brush strokes, mirrors, undo / redo, drawn tabs, extrude glyph.
+-- Rebuilds BitEditor.livecode: run it in a copy (tests/run_headless.py --root COPY, see lc_layout2_test.txt).
+repeat for each item tL in "lib_cellmap,build_editor,lib_bit,lib_theme,BitEditor"
+  if there is a stack tL then
+    if tL is not "BitEditor" then stop using stack tL
+    delete stack tL
+  end if
+end repeat
+put "//wsl$/Ubuntu/home/igame3d/projects/LIB_BIT/editor" into tD
+start using stack (tD & "/livecode/build_editor.livecodescript")
+Build.Editor tD
+put "built: " & (the result ends with "BitEditor.livecode") & cr into tLog
+send "Ed.Init" to stack "BitEditor"
+set the defaultStack to "BitEditor"
+put "no native tab controls: " & (there is not a button "LeftTabs" and there is not a button "MapTabs") & cr after tLog
+put "drawn tabs: " & (the number of lines of the text of field "tab_Map_3" is 1 and the text of field "tab_Map_3" is "Heights" and the text of field "tab_Left_2" is "Properties") & cr after tLog
+put "selected tab shown: " & (the backgroundColor of field "tab_Map_1" is the uOnBack of field "tab_Map_1" and the backgroundColor of field "tab_Map_2" is the uOffBack of field "tab_Map_2") & cr after tLog
+dispatch "tabPick" to card 1 of stack "BitEditor" with "Map", "Heights"
+put "tab click -> Heights: " & (value("Ed.State()", stack "BitEditor") contains "|map Heights|" and the backgroundColor of field "tab_Map_3" is the uOnBack of field "tab_Map_3" and the visible of group "HeightTools") & cr after tLog
+dispatch "tabPick" to card 1 of stack "BitEditor" with "Left", "Properties"
+put "tab click -> Properties: " & (value("Ed.State()", stack "BitEditor") contains "|left Properties|" and the visible of field "Props" and not the visible of field "Glyphs") & cr after tLog
+dispatch "tabPick" to card 1 of stack "BitEditor" with "Left", "Glyphs"
+dispatch "tabPick" to card 1 of stack "BitEditor" with "Map", "1bit"
+
+-- the brush on the board: glyph 1 is cleared, then a stroke from row 2,col 2 to row 2,col 9 (two looks of the mouse)
+send "Ed.SelectCode 1" to stack "BitEditor"
+send "Ed.GlyphDo Clear" to stack "BitEditor"
+put value("Ed.HistCount()", stack "BitEditor") into tH0
+send "Ed.TestStroke board, " & quote & "2,2 2,9" & quote to stack "BitEditor"
+put value("CellMap.Glyph(Ed.TestFont(), 1)", stack "BitEditor") into tG
+put "board stroke fills the gap between two looks: " & (line 2 of tG is "0111111110000000") & cr after tLog
+put "each bit is its own history line: " & (item 1 of value("Ed.HistCount()", stack "BitEditor") - item 1 of tH0 is 8) & cr after tLog
+put "board square lit: " & (the backgroundColor of graphic "b_2_5" is "225,225,230") & cr after tLog
+send "Ed.Undo" to stack "BitEditor"
+put value("CellMap.Glyph(Ed.TestFont(), 1)", stack "BitEditor") into tG
+put "one undo takes the whole stroke back: " & (line 2 of tG is "0000000000000000" and the backgroundColor of graphic "b_2_5" is "48,48,56") & cr after tLog
+send "Ed.Redo" to stack "BitEditor"
+put value("CellMap.Glyph(Ed.TestFont(), 1)", stack "BitEditor") into tG
+put "redo brings it back: " & (line 2 of tG is "0111111110000000") & cr after tLog
+send "Ed.Undo" to stack "BitEditor"
+-- mirrors while drawing
+send "Ed.GlyphDo " & quote & "Mirror H While Drawing" & quote to stack "BitEditor"
+put "mirror H: menu checked, guide line shown: " & (line 1 of the text of button "Bit" is "!cMirror H While Drawing" and the visible of graphic "MirrorHLine" and not the visible of graphic "MirrorVLine") & cr after tLog
+send "Ed.TestStroke board, " & quote & "3,2 3,4" & quote to stack "BitEditor"
+put value("CellMap.Glyph(Ed.TestFont(), 1)", stack "BitEditor") into tG
+put "mirror H paints both sides: " & (line 3 of tG is "0111000000001110") & cr after tLog
+send "Ed.GlyphDo " & quote & "Mirror V While Drawing" & quote to stack "BitEditor"
+send "Ed.TestStroke board, " & quote & "1,1" & quote to stack "BitEditor"
+put value("CellMap.Glyph(Ed.TestFont(), 1)", stack "BitEditor") into tG
+put "mirror H + V: four corners from one bit: " & (line 1 of tG is "1000000000000001" and line 16 of tG is "1000000000000001") & cr after tLog
+send "Ed.GlyphDo " & quote & "Mirror H While Drawing" & quote to stack "BitEditor"
+send "Ed.GlyphDo " & quote & "Mirror V While Drawing" & quote to stack "BitEditor"
+put "mirrors off again: " & (line 1 of the text of button "Bit" is "Mirror H While Drawing" and not the visible of graphic "MirrorHLine") & cr after tLog
+-- mirror once
+send "Ed.GlyphDo Clear" to stack "BitEditor"
+send "Ed.TestStroke board, " & quote & "2,1 2,3" & quote to stack "BitEditor"
+send "Ed.GlyphDo " & quote & "Mirror H Now (left onto right)" & quote to stack "BitEditor"
+send "Ed.GlyphDo " & quote & "Mirror V Now (top onto bottom)" & quote to stack "BitEditor"
+put value("CellMap.Glyph(Ed.TestFont(), 1)", stack "BitEditor") into tG
+put "mirror H now, mirror V now: " & (line 2 of tG is "1110000000000111" and line 15 of tG is "1110000000000111" and line 1 of tG is "0000000000000000") & cr after tLog
+send "Ed.Undo" to stack "BitEditor"
+put value("CellMap.Glyph(Ed.TestFont(), 1)", stack "BitEditor") into tG
+put "undo of mirror V now: " & (line 2 of tG is "1110000000000111" and line 15 of tG is "0000000000000000") & cr after tLog
+
+-- the brush on the map: glyph 65 from col 3,row 8 to col 9,row 8, then down to col 9,row 10
+send "Ed.SelectCode 65" to stack "BitEditor"
+put value("Ed.TestCell(" & quote & "design" & quote & ",6,8)", stack "BitEditor") into tWas
+put value("Ed.HistCount()", stack "BitEditor") into tH0
+send "Ed.TestStroke map, " & quote & "3,8 9,8 9,10" & quote to stack "BitEditor"
+put "map stroke paints every cell on the way: " & (value("Ed.TestCell(" & quote & "design" & quote & ",6,8)", stack "BitEditor") is 65 and value("Ed.TestCell(" & quote & "design" & quote & ",9,9)", stack "BitEditor") is 65) & cr after tLog
+put "map picture follows: " & (value("Ed.MapPixels(6,8)", stack "BitEditor") contains "225,225,230") & cr after tLog
+put "history lines of the stroke: " & (item 1 of value("Ed.HistCount()", stack "BitEditor") - item 1 of tH0) & cr after tLog
+send "Ed.Undo" to stack "BitEditor"
+put "undo restores the cells: " & (value("Ed.TestCell(" & quote & "design" & quote & ",6,8)", stack "BitEditor") is tWas) & cr after tLog
+-- a property stroke sets tag and floor; one undo takes both back
+send "Ed.LeftTab Properties" to stack "BitEditor"
+send "Ed.SelectTag 35" to stack "BitEditor"
+send "Ed.TestStroke map, " & quote & "4,10 6,10" & quote to stack "BitEditor"
+put "property stroke: tag and height: " & (value("Ed.TestCell(" & quote & "tags" & quote & ",5,10)", stack "BitEditor") is "#" and value("Ed.TestCell(" & quote & "floor" & quote & ",5,10)", stack "BitEditor") is 100) & cr after tLog
+send "Ed.Undo" to stack "BitEditor"
+put "undo: tag and height back: " & (value("Ed.TestCell(" & quote & "tags" & quote & ",5,10)", stack "BitEditor") is "." and value("Ed.TestCell(" & quote & "floor" & quote & ",5,10)", stack "BitEditor") is 1) & cr after tLog
+-- whole-map commands undo as one step
+put value("Ed.State()", stack "BitEditor") into tS0
+send "Ed.Resize 10,10" to stack "BitEditor"
+put "resize: " & (value("Ed.State()", stack "BitEditor") contains "|10x10|") & cr after tLog
+send "Ed.Undo" to stack "BitEditor"
+put "undo resize: " & (value("Ed.State()", stack "BitEditor") contains "|24x18|") & cr after tLog
+-- extrude: whole cell or glyph shape
+send "Ed.LeftTab Glyphs" to stack "BitEditor"
+put value("Ed.State()", stack "BitEditor") into tS0
+send "Ed.MeshMenu " & quote & "Extrude: Glyph Shape" & quote to stack "BitEditor"
+put value("Ed.State()", stack "BitEditor") into tS1
+set the itemDel to "|"
+put "extrude glyph shape: 3D lines " & item 9 of tS0 & " -> " & item 9 of tS1 & ", changed: " & (item 9 of tS0 is not item 9 of tS1) & cr after tLog
+set the itemDel to comma
+put "extrude menu checked, title says so: " & (the text of button "Mesh" contains "!cExtrude: Glyph Shape" and field "ViewTitle" contains "glyph shapes") & cr after tLog
+send "Ed.SaveMap " & quote & tD & "/tests/_feedback_saved.cellmap" & quote to stack "BitEditor"
+put "saved with the map: " & (url ("binfile:" & tD & "/tests/_feedback_saved.cellmap") contains ("extrude" & tab & "glyph")) & cr after tLog
+send "Ed.Undo" to stack "BitEditor"
+set the itemDel to "|"
+put "undo extrude: " & (item 9 of value("Ed.State()", stack "BitEditor") is item 9 of tS0) & cr after tLog
+set the itemDel to comma
+-- painting in the 3D preview: the cell drawn at a point is the cell picked at that point
+put empty into tBad
+repeat for each word tCell in "9,11 3,16 20,12 6,13 15,4 1,1 24,18 12,9"
+  put value("Ed.TestProject(" & tCell & ")", stack "BitEditor") into tPt
+  put value("Ed.ViewCellAt(" & tPt & ")", stack "BitEditor") into tGot
+  if tGot is not tCell then put tCell & "->" & tGot & " at " & tPt & "; " after tBad
+end repeat
+put "3D pick finds the cell drawn there (8 cells): " & (tBad is empty) && tBad & cr after tLog
+send "Ed.TestTurn 0.7,0.6" to stack "BitEditor"
+put empty into tBad
+repeat for each word tCell in "9,11 3,16 12,9 22,16"
+  put value("Ed.TestProject(" & tCell & ")", stack "BitEditor") into tPt
+  put value("Ed.ViewCellAt(" & tPt & ")", stack "BitEditor") into tGot
+  if tGot is not tCell then put tCell & "->" & tGot & " at " & tPt & "; " after tBad
+end repeat
+put "3D pick after turning the view: " & (tBad is empty) && tBad & cr after tLog
+-- camera mode: the keys move what the camera looks at; the picture still matches the pick
+put "keys W + D + R -> forward,right,up: " & (value("Ed.CamKeys(" & quote & "119,100,82" & quote & ")", stack "BitEditor") is "1,1,1") & ", S + A + F: " & (value("Ed.CamKeys(" & quote & "115,97,102" & quote & ")", stack "BitEditor") is "-1,-1,-1") & cr after tLog
+send "Ed.TestTurn 0,0.87" to stack "BitEditor"
+send "Ed.CamMove 100,0,0" to stack "BitEditor"
+put value("Ed.TestCamera()", stack "BitEditor") into tCam
+put "forward (view from the south) moves north: " & (item 4 of tCam is 0 and item 6 of tCam is -100) & cr after tLog
+send "Ed.CamMove 0,50,25" to stack "BitEditor"
+put value("Ed.TestCamera()", stack "BitEditor") into tCam
+put "right moves east, up moves up: " & (item 4 of tCam is 50 and item 5 of tCam is 25) & cr after tLog
+send "Ed.Draw3D" to stack "BitEditor"
+put value("Ed.TestProject(9,11)", stack "BitEditor") into tPt
+put "pick still right after moving the camera: " & (value("Ed.ViewCellAt(" & tPt & ")", stack "BitEditor") is "9,11") & cr after tLog
+send "Ed.SceneMenu " & quote & "Reset View" & quote to stack "BitEditor"
+put "reset view puts the camera back: " & (item 4 to 6 of value("Ed.TestCamera()", stack "BitEditor") is "0,0,0") & cr after tLog
+-- the history as text
+send "Ed.EditMenu " & quote & "Export Change History" & quote to stack "BitEditor"
+put url ("binfile:" & tD & "/maps/wizard_pool_history.txt") into tHist
+put "history file: " & (the number of lines of tHist - 1) & " lines; line 2: " & line 2 of tHist & cr after tLog
+put "state: " & value("Ed.State()", stack "BitEditor") & cr after tLog
+put "status: " & field "Status" of stack "BitEditor" & cr after tLog
+return tLog

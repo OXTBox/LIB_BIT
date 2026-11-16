@@ -94,6 +94,22 @@ seen from above, is its 1-bit picture: a screen laid flat, its characters emboss
 Walls keep their glyph as the editor's picture of them and stand as plain blocks. Codes 32
 (space) and 46 (the floor dot) are never raised. `relief 0` turns it off.
 
+### 4b. `extrude glyph`: the glyph stands as the solid (the owner, 2026-11-15)
+"Setting the height of the object creates a height preview cube, but doesn't extrude the shape."
+A map whose `[map]` section says `extrude	glyph` raises the **glyph**, not the whole cell: in a
+cell higher than the flat floor (ground over 1), not dug, whose glyph has lit bits (never 32 or
+46), the lit bits stand as a prism from the floor (1) up to the cell's ground, and the rest of
+the cell is flat floor at 1. Walls drawn with the Aquarius line pieces become thin walls with
+real corners; a letter with a height is a letter-shaped pillar.
+- Segments: the cell is drawn as a floor cell; the glyph's outline at the cell's height and one
+  upright under each outline corner, in the cell's class (`wall`, `green`).
+- Standing: on a lit bit you stand at the cell's height (or are stopped by it); beside it, on
+  the floor. A tag whose effect is `block` blocks only the lit bits; `locked` still locks the cell.
+- No low relief in such a cell (the prism replaces it). Without a font nothing is shaped.
+- A map that says nothing (every map before today) is `extrude cell`: unchanged.
+- `CellMap.Shaped(map, font, col, row)` / `cellmap.shaped(m, font, r, c)`; BitEditor: Mesh >
+  Extrude: Whole Cell / Glyph Shape. Tested equal in Python and LiveCode (segments and walks).
+
 ## 5. The file (`.cellmap`, UTF-8 text, version 2)
 
 ```
