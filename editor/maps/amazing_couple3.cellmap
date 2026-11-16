@@ -1,0 +1,53 @@
+# cellmap 1 - LIB_BIT/editor (format: editor/README.md)
+[map]
+name	amazing_couple3
+cols	13
+rows	13
+cell	76
+wallH	58
+unitPx	16
+font	Aquarius
+tags	tags_default
+version	1
+[design hex]
+DE 43 4C 41 55 44 45 AC AC AC AC AC CE
+D6 2E D6 2E 2E 2E 2E 2E 2E 2E 2E 2E D6
+D6 2E D6 2E DE AC AC AC DC AC 96 2E D6
+D6 2E D6 2E D6 2E 2E 2E D6 2E 2E 2E D6
+D6 2E D6 2E D6 2E 96 2E CF AC AC AC DD
+D6 2E D6 2E 96 2E D6 2E 2E 2E 2E 2E D6
+D6 2E CF AC AC AC DD 2E DE AC 96 2E D6
+D6 2E 2E 2E 2E 2E D6 2E D6 2E 2E 2E D6
+CD AC AC AC CE 2E CF AC DD 2E AC AC DD
+D6 2E 2E 2E D6 2E 2E 2E D6 2E 2E 2E D6
+D6 2E 96 2E CF AC AC 96 CF AC AC 96 D6
+D6 2E D6 2E 2E 2E 2E 2E 2E 2E 2E 2E D6
+CF AC CC AC AC AC AC AC AC AC AC AC DF
+[tags]
+#############
+#@#.........#
+#.#.#######.#
+#_#.#...#...#
+#.#.#.#.#####
+#.#..o#.....#
+#.#####.###.#
+#.....#.#...#
+#####.###.###
+#...#...#=..#
+#.#.###.###.#
+#.#........X#
+#############
+[heights]
+9999999999999
+9090000000009
+9090999999909
+9190900090009
+9090909099999
+9090009000009
+9099999099909
+9000009090009
+9999909990999
+9000900093009
+9090999099909
+9090000000009
+9999999999999
