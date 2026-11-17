@@ -1,0 +1,10 @@
+# cellpack 1 - LIB_BIT/editor (format: editor/CELLMAP_V3.md)
+[pack]
+name	two_rooms
+start	cellar
+[maps]
+cellar	two_rooms_cellar.cellmap	main	0	1,1
+loft	two_rooms_loft.cellmap	main	120	1,1
+[doors]
+cellar:2,2	ladder	loft:2,2	the ladder in the corner: up
+loft:2,2	ladder	cellar:2,2	and down again

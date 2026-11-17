@@ -1,5 +1,7 @@
 # cellmap v2: the hub between the editor and the engines
 
+**Next step: `CELLMAP_V3.md` (slopes, stacked maps, map packs; 16 Nov 2026). Nothing below changes.**
+
 Saturday, November 14, 2026. Written by Claude (Fable) from the owner's two notes of this morning
 (11:40 on the example map, 11:57 on the BitEditor) and Opus's brief. Status of each part is in
 section 9. Version 1 is described in `README.md`; every v1 file still reads.
@@ -233,4 +235,5 @@ A **Heights** tab beside 1bit and Cells: the map's glyphs in two colours a cell.
 | Sample map `maps/wizard_pool.cellmap` (pool, dais, tower, clouds, maze corner, screen of glyphs) | done |
 | Vibecode3D card `LIB_EDITOR/examples/E13_WalkTheMap` | done: headless test of 11 scenes passes; ran in the real engine at 30 frames a second with all 1562 lines, drawn pixels counted per colour from six viewpoints |
 | The same card in the xt3d bench | not started |
-| Boxes for xt3d, stacked maps in the walker, links and objects acting in a game | format only: read and written, not yet used |
+| Boxes for xt3d, links and objects acting in a game | format only: read and written, not yet used |
+| Stacked maps in the walker | done in version 3 (`CELLMAP_V3.md`, 2026-11-16) |

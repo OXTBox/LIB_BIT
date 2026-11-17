@@ -20,6 +20,9 @@ The file is plain UTF-8 text in [sections]; LiveCode reads it into a keyed array
     python3 -I cellmap.py heights FILE         floor / ceiling / red / green / blue as a table of rows
 Version 2 (CELLMAP_V2.md): floor, ceiling, red, green, blue 0-255 a cell in height units (100 = a full
 hallway), links, objects, stacked maps; levels(), stand_at(), walk(), level_segments(), level_boxes().
+Version 3 (CELLMAP_V3.md): slopes (a [slope] section: four corner rises a cell) and map packs
+(a .cellpack file naming a level's maps: stacked in one place, or joined by doors):
+slope(), rise_at(), steep(), read_pack(), pack_stand_at(), pack_walk(), pack_doors(), pack_enter().
 """
 import colorsys, json, os, sys
 
@@ -281,8 +284,8 @@ def printable(code):
 
 META_ORDER = ['name', 'cols', 'rows', 'cell', 'wallH', 'unitPx', 'font', 'tags', 'version']
 LAYERS2 = ['floor', 'ceiling', 'red', 'green', 'blue']
-SECTIONS = ['map', 'design', 'design hex', 'tags', 'heights', 'tagdefs'] + LAYERS2 + ['links', 'objects', 'stack']
-V2_DEFAULTS = dict(base=0, step=30, head=83, relief=6, slab=10)
+SECTIONS = ['map', 'design', 'design hex', 'tags', 'heights', 'tagdefs'] + LAYERS2 + ['links', 'objects', 'stack', 'slope']
+V2_DEFAULTS = dict(base=0, step=30, head=83, relief=6, slab=10, steep=60)
 
 
 def version(m):
@@ -291,7 +294,7 @@ def version(m):
 
 def map_text(m):
     v = version(m)
-    out = ['# cellmap %d - LIB_BIT/editor (format: editor/%s)' % (v, 'CELLMAP_V2.md' if v >= 2 else 'README.md'), '[map]']
+    out = ['# cellmap %d - LIB_BIT/editor (format: editor/%s)' % (v, 'CELLMAP_V3.md' if v >= 3 else 'CELLMAP_V2.md' if v >= 2 else 'README.md'), '[map]']
     keys = [k for k in META_ORDER if k in m['meta']] + sorted(k for k in m['meta'] if k not in META_ORDER)
     out += ['%s\t%s' % (k, m['meta'][k]) for k in keys]
     if all(printable(c) for row in m['design'] for c in row):
@@ -320,6 +323,9 @@ def map_text(m):
         if m.get('stack'):
             out.append('[stack]')
             out += ['\t'.join([k['file'], str(k['base']), k['at']]) for k in m['stack']]
+        if m.get('slope'):
+            out.append('[slope]')
+            out += ['%d,%d\t%s' % (c + 1, r + 1, ' '.join(str(x) for x in m['slope'][r, c])) for r, c in sorted(m['slope'])]
     if m.get('tagdefs'):
         out.append('[tagdefs]')
         for ch, t in sorted(m['tagdefs'].items()):
@@ -333,7 +339,7 @@ def write_map(m, path):
 
 def read_map(path):
     """reads version 1 and version 2 files; a version 1 map stays version 1 (see upgrade)"""
-    m = dict(meta={}, design=[], tags=[], heights=[], tagdefs={}, links=[], objects=[], stack=[])
+    m = dict(meta={}, design=[], tags=[], heights=[], tagdefs={}, links=[], objects=[], stack=[], slope={})
     for layer in LAYERS2:
         m[layer] = []
     sec = None
@@ -366,6 +372,13 @@ def read_map(path):
         elif sec == 'stack' and line:
             f = (line.split('\t') + [''] * 3)[:3]
             m['stack'].append(dict(zip(('file', 'base', 'at'), f)))
+        elif sec == 'slope' and line:
+            f = line.split('\t')                            # col,row <tab> nw ne se sw <tab> what (only ground)
+            at, rises = f[0].split(','), (f[1].split() if len(f) > 1 else [])
+            if len(f) > 2 and f[2] not in ('', 'ground'):
+                continue
+            if len(at) == 2 and len(rises) == 4:
+                m['slope'][int(at[1]) - 1, int(at[0]) - 1] = [int(x) for x in rises]
         elif sec == 'tagdefs' and line:
             f = line.split('\t')
             m['tagdefs'][f[0]] = dict(name=f[1], colour=f[2], solid=int(f[3]), height=int(f[4]),
@@ -417,6 +430,7 @@ def upgrade(m):
     m['meta']['version'] = 2
     for k in ('links', 'objects', 'stack'):
         m.setdefault(k, [])
+    m.setdefault('slope', {})
     return m
 
 
@@ -461,6 +475,7 @@ def column(m, r, c):
 
 
 NO_ROOF = 9999
+OPEN_SKY = 5000                 # air above this much is open sky (a slope or a raised glyph takes a little off 9999)
 
 
 def levels(m, r, c):
@@ -483,7 +498,7 @@ def levels(m, r, c):
 
 def has_relief(m, r, c):
     col = column(m, r, c)
-    if col is None or opt(m, 'relief') <= 0 or m['design'][r][c] in (32, 46):
+    if col is None or opt(m, 'relief') <= 0 or m['design'][r][c] in (32, 46) or slope(m, r, c):
         return False
     return m['red'][r][c] == 0 and col[0] < 100 and (col[1] is None or col[1] > col[0])
 
@@ -496,7 +511,7 @@ def shaped(m, font, r, c):
         return False
     if not (0 <= r < m['meta']['rows'] and 0 <= c < m['meta']['cols']):
         return False
-    if m['design'][r][c] in (32, 46) or m['red'][r][c] > 0:
+    if m['design'][r][c] in (32, 46) or m['red'][r][c] > 0 or slope(m, r, c):
         return False
     col = column(m, r, c)
     if col is None or col[0] <= 1:
@@ -576,11 +591,42 @@ def pick(m, ex, ey, ez, dx, dy, dz, max_len):
     return None
 
 
-def stand_at(m, tags, font, x, z, y):
-    """the height (engine units) an actor now at height y would stand at on point x,z; None = cannot.
-    Blocked by: outside, empty space, a tag whose effect is block or locked, a rise over `step`,
-    less than `head` of air."""
-    import math
+def slope(m, r, c):
+    """a cell's slope: [nw, ne, se, sw], hu each corner of its ground rises; None = flat (0-based row, col)"""
+    return (m.get('slope') or {}).get((r, c))
+
+
+def set_slope(m, r, c, rises=None):
+    """slope a cell (four corner rises 0-255) or flatten it (None or all zeros); the map becomes version 3"""
+    m.setdefault('slope', {})
+    if not rises or not any(rises):
+        m['slope'].pop((r, c), None)
+        return
+    upgrade(m)
+    m['slope'][r, c] = [int(x) for x in rises]
+    m['meta']['version'] = max(3, version(m))
+
+
+def steep(m, r, c):
+    """the cell's slope is too steep to walk up: its corners differ by more than `steep` hu"""
+    s = slope(m, r, c)
+    return bool(s) and max(s) - min(s) > opt(m, 'steep')
+
+
+def rise_at(m, r, c, x, z):
+    """hu the sloped ground of cell r,c stands above the cell's ground under engine point x,z"""
+    s = slope(m, r, c)
+    if not s:
+        return 0
+    u = min(1.0, max(0.0, x / m['meta']['cell'] + m['meta']['cols'] / 2 - c))
+    v = min(1.0, max(0.0, z / m['meta']['cell'] + m['meta']['rows'] / 2 - r))
+    return s[0] * (1 - u) * (1 - v) + s[1] * u * (1 - v) + s[2] * u * v + s[3] * (1 - u) * v
+
+
+def point_levels(m, tags, font, x, z):
+    """what stands under engine point x,z of ONE map, in the map's own hu: None over empty space,
+    else dict(levels=[(top, air)] lowest first ([] when a tag blocks), steep, under (the lowest
+    solid: a stacked map is a deck from here up to its ground), solid (the ground's top), r, c)"""
     col, row = cell_at(m, x, z)
     r, c = row - 1, col - 1
     col_ = column(m, r, c)
@@ -591,19 +637,37 @@ def stand_at(m, tags, font, x, z, y):
     if is_shaped and not lit_at(m, font, r, c, x, z):
         is_open = True
         col_ = (1,) + tuple(col_[1:])
-    lv = levels_of(col_)
+    out = dict(steep=steep(m, r, c), under=min(0, col_[0]), solid=col_[0], r=r, c=c, levels=[])
     effect = tag_info(m, tags, m['tags'][r][c], 'effect')
-    if not lv or effect == 'locked' or (effect == 'block' and not is_open):
+    if effect == 'locked' or (effect == 'block' and not is_open):
+        return out
+    for i, (top, air) in enumerate(levels_of(col_)):
+        if i == 0:
+            if slope(m, r, c):
+                up = rise_at(m, r, c, x, z)
+                top += up
+                air -= up
+                out['solid'] = top
+            elif font is not None and not is_shaped and has_relief(m, r, c) and lit_at(m, font, r, c, x, z):
+                top += opt(m, 'relief')
+                air -= opt(m, 'relief')
+        out['levels'].append((top, air))
+    return out
+
+
+def stand_at(m, tags, font, x, z, y, centre=False):
+    """the height (engine units) an actor now at height y would stand at on point x,z; None = cannot.
+    Blocked by: outside, empty space, a tag whose effect is block or locked, a rise over `step`,
+    less than `head` of air. centre (the actor's middle, not its rim): no rise at all on a steep slope."""
+    p = point_levels(m, tags, font, x, z)
+    if p is None or not p['levels']:
         return None
     yh = y / hu(m) - opt(m, 'base')
     best = None
-    for i, (top, air) in enumerate(lv):
-        if i == 0 and font is not None and not is_shaped and has_relief(m, r, c):
-            if lit_at(m, font, r, c, x, z):
-                top += opt(m, 'relief')
-                air -= opt(m, 'relief')
-        if top <= yh + opt(m, 'step') + 1e-6 and air >= opt(m, 'head'):
-            best = top
+    for i, (top, air) in enumerate(p['levels']):
+        rise = 0.01 if (centre and i == 0 and p['steep']) else opt(m, 'step') + 1e-6
+        if top <= yh + rise and air >= opt(m, 'head') and (air >= OPEN_SKY or yh <= top + air + 1e-6):
+            best = top                                  # the last test: a drop goes through air only, never through a roof
     return None if best is None else (best + opt(m, 'base')) * hu(m)
 
 
@@ -613,20 +677,196 @@ def ground_at(m, tags, font, x, z, y=1e9):
 
 
 def walk(m, tags, font, x, z, y, dx, dz, radius=12):
-    """move an actor (a circle) by dx,dz, sliding along what blocks it: (x, z, y, effect of the cell it is in)"""
+    """move an actor (a circle) by dx,dz, sliding along what blocks it: (x, z, y, effect of the cell it is in).
+    On a steep slope a `path` or `none` cell answers `slide`."""
     def fits(nx, nz):
         for ax in (-radius, radius):
             for az in (-radius, radius):
-                if stand_at(m, tags, font, nx + ax, nz + az, y) is None:
-                    return None
-        return stand_at(m, tags, font, nx, nz, y)
+                if stand_at(m, tags, font, nx + ax, nz + az, y) is None and stand_at(m, tags, font, x + ax, z + az, y) is not None:
+                    return None                             # its rim would enter a wall (a rim already in one, after a drop, may leave)
+        return stand_at(m, tags, font, nx, nz, y, True)
     for tx, tz in ((dx, dz), (dx, 0), (0, dz)):
         ny = fits(x + tx, z + tz)
         if ny is not None and (tx or tz):
             x, z, y = x + tx, z + tz, ny
             break
     col, row = cell_at(m, x, z)
-    return x, z, y, tag_info(m, tags, m['tags'][row - 1][col - 1], 'effect')
+    effect = tag_info(m, tags, m['tags'][row - 1][col - 1], 'effect')
+    if effect in ('path', 'none') and steep(m, row - 1, col - 1):
+        effect = 'slide'
+    return x, z, y, effect
+
+
+# ------------------------------------------------------------------ version 3: map packs (CELLMAP_V3.md)
+def pack_text(pack):
+    out = ['# cellpack 1 - LIB_BIT/editor (format: editor/CELLMAP_V3.md)', '[pack]']
+    out += ['%s\t%s' % (k, pack['meta'][k]) for k in ['name', 'start'] if k in pack['meta']]
+    out += ['%s\t%s' % (k, pack['meta'][k]) for k in sorted(pack['meta']) if k not in ('name', 'start')]
+    out.append('[maps]')
+    out += ['\t'.join([e['id'], e['file'], e['place'], str(e['base']), e['at']]) for e in pack['maps']]
+    if pack['doors']:
+        out.append('[doors]')
+        out += ['\t'.join([d['from'], d['type'], d['to'], d.get('note', '')]) for d in pack['doors']]
+    return '\n'.join(out) + '\n'
+
+
+def read_pack(path, load=True):
+    """a .cellpack file: dict(meta, maps=[dict(id, file, place, base, at, map, ox, oz)], doors, problems).
+    Map files are named from the pack's own folder (never absolute, never ..). A plain .cellmap
+    reads as a pack of one map (id = its name), its [stack] lines as the maps over it."""
+    here = os.path.dirname(os.path.abspath(path))
+    pack = dict(meta={}, maps=[], doors=[], problems=[], path=path)
+    if path.endswith('.cellmap'):
+        m = read_map(path)
+        pack['meta'] = dict(name=m['meta'].get('name', ''), start=m['meta'].get('name', 'map'))
+        pack['maps'].append(dict(id=m['meta'].get('name', 'map'), file=os.path.basename(path), place='main',
+                                 base=m['meta'].get('base', 0), at='1,1'))
+        for n, k in enumerate(m.get('stack', [])):
+            pack['maps'].append(dict(id='stack%d' % (n + 1), file=k['file'], place='main', base=k['base'], at=k['at']))
+    else:
+        sec = None
+        for line in open(path, encoding='utf-8'):
+            line = line.rstrip('\n').rstrip('\r')
+            if not line or line.startswith('#'):
+                continue
+            if line in ('[pack]', '[maps]', '[doors]'):
+                sec = line[1:-1]
+                continue
+            f = line.split('\t')
+            if sec == 'pack' and len(f) > 1:
+                pack['meta'][f[0]] = f[1]
+            elif sec == 'maps':
+                f = (f + [''] * 5)[:5]
+                pack['maps'].append(dict(id=f[0], file=f[1], place=f[2] or 'main', base=f[3] or 0, at=f[4] or '1,1'))
+            elif sec == 'doors':
+                f = (f + [''] * 4)[:4]
+                pack['doors'].append(dict(zip(('from', 'type', 'to', 'note'), f)))
+    first = {}
+    for e in pack['maps']:
+        e['base'] = int(e['base']) if str(e['base']).lstrip('-').isdigit() else float(e['base'])
+        e['map'], e['ox'], e['oz'] = None, 0.0, 0.0
+        f = e['file'].replace('\\', '/')
+        if f.startswith('/') or ':' in f or '..' in f.split('/'):
+            pack['problems'].append('%s: the file must be inside the pack\'s folder: %s' % (e['id'], e['file']))
+            continue
+        if not load:
+            continue
+        if not os.path.isfile(os.path.join(here, f)):
+            pack['problems'].append('%s: no file %s' % (e['id'], e['file']))
+            continue
+        m = upgrade(read_map(os.path.join(here, f)))
+        m['meta']['base'] = e['base']                       # the pack places the map
+        e['map'] = m
+        g = first.setdefault(e['place'], e)                 # a place's first map is centred on 0,0
+        ac, ar = (int(v) for v in e['at'].split(','))
+        gc, gr = (int(v) for v in g['at'].split(','))
+        cell = g['map']['meta']['cell']
+        e['ox'] = (ac - gc + m['meta']['cols'] / 2 - g['map']['meta']['cols'] / 2) * cell
+        e['oz'] = (ar - gr + m['meta']['rows'] / 2 - g['map']['meta']['rows'] / 2) * cell
+        if (m['meta']['cell'], m['meta']['wallH']) != (cell, g['map']['meta']['wallH']):
+            pack['problems'].append('%s: cell and wallH differ from %s in the same place' % (e['id'], g['id']))
+    ids = [e['id'] for e in pack['maps']]
+    for d in pack['doors']:
+        for end in (d['from'], d['to']):
+            if end.split(':')[0] not in ids:
+                pack['problems'].append('door %s -> %s: no map %s' % (d['from'], d['to'], end.split(':')[0]))
+    return pack
+
+
+def pack_map(pack, map_id):
+    for e in pack['maps']:
+        if e['id'] == map_id:
+            return e
+    return None
+
+
+def pack_place(pack, place):
+    """the loaded maps of one place, in the pack's order (the first is the place's ground map)"""
+    return [e for e in pack['maps'] if e['place'] == place and e['map'] is not None]
+
+
+def pack_stand_at(pack, place, tags, font, x, z, y, centre=False):
+    """stand_at over every map stacked in a place: (height in engine units, map id), or None.
+    Each map offers its levels; another map's solid above a level is its roof."""
+    es = pack_place(pack, place)
+    if not es:
+        return None
+    g = es[0]['map']
+    k, step, head = hu(g), opt(g, 'step'), opt(g, 'head')
+    pts = []
+    for e in es:
+        p = point_levels(e['map'], tags, font, x - e['ox'], z - e['oz'])
+        if p is not None:
+            pts.append((e, p))
+    yh = y / k
+    best = None
+    for e, p in pts:
+        for i, (top, air) in enumerate(p['levels']):
+            top += e['base']
+            for e2, p2 in pts:
+                if e2 is e:
+                    continue
+                lo, hi = e2['base'] + p2['under'], e2['base'] + p2['solid']
+                if lo >= top - 1e-6:
+                    air = min(air, lo - top)
+                elif hi > top + 1e-6:
+                    air = 0                                 # inside the other map's solid
+            rise = 0.01 if (centre and i == 0 and p['steep']) else step + 1e-6
+            if top <= yh + rise and air >= head and (air >= OPEN_SKY or yh <= top + air + 1e-6) and (best is None or top > best[0]):
+                best = (top, e['id'])
+    return None if best is None else (best[0] * k, best[1])
+
+
+def pack_walk(pack, place, tags, font, x, z, y, dx, dz, radius=12):
+    """walk() over the maps stacked in a place: (x, z, y, effect, map id, col, row) of the cell stood on"""
+    def fits(nx, nz):
+        for ax in (-radius, radius):
+            for az in (-radius, radius):
+                if pack_stand_at(pack, place, tags, font, nx + ax, nz + az, y) is None and \
+                        pack_stand_at(pack, place, tags, font, x + ax, z + az, y) is not None:
+                    return None
+        return pack_stand_at(pack, place, tags, font, nx, nz, y, True)
+    on = pack_stand_at(pack, place, tags, font, x, z, y + 0.001, True)
+    for tx, tz in ((dx, dz), (dx, 0), (0, dz)):
+        got = fits(x + tx, z + tz)
+        if got is not None and (tx or tz):
+            x, z, y, on = x + tx, z + tz, got[0], got
+            break
+    if on is None:
+        return x, z, y, 'none', '', 0, 0
+    e = pack_map(pack, on[1])
+    col, row = cell_at(e['map'], x - e['ox'], z - e['oz'])
+    effect = tag_info(e['map'], tags, e['map']['tags'][row - 1][col - 1], 'effect')
+    if effect in ('path', 'none') and steep(e['map'], row - 1, col - 1):
+        effect = 'slide'
+    return x, z, y, effect, e['id'], col, row
+
+
+def pack_doors(pack, map_id, col, row):
+    """the doors leaving a cell: [dict(from, type, to, note)] (to = 'map:col,row')"""
+    return [d for d in pack['doors'] if d['from'] == '%s:%d,%d' % (map_id, col, row)]
+
+
+def pack_enter(pack, tags, font, where):
+    """arrive at 'map:col,row' (a door's `to`, or the pack's start map's @ cell when where is None):
+    (place, x, z, y) in engine units, standing in the middle of the cell; None when there is no such place to stand"""
+    if where is None:
+        e = pack_map(pack, pack['meta'].get('start', '')) or (pack['maps'][0] if pack['maps'] else None)
+        if e is None or e['map'] is None:
+            return None
+        spots = [(c + 1, r + 1) for r, row in enumerate(e['map']['tags']) for c, t in enumerate(row) if t == '@']
+        col, row = spots[0] if spots else (1, 1)
+    else:
+        e = pack_map(pack, where.split(':')[0])
+        if e is None or e['map'] is None:
+            return None
+        col, row = (float(v) for v in where.split(':')[1].split(','))
+    m = e['map']
+    x, z = cell_x(m, col), cell_z(m, row)
+    p = point_levels(m, tags, font, x, z)
+    if p is None or not p['levels']:
+        return None
+    return e['place'], x + e['ox'], z + e['oz'], (p['levels'][0][0] + e['base']) * hu(m)
 
 
 # ------------------------------------------------------------------ version 2: the level as line segments

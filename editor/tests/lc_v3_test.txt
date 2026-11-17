@@ -1,0 +1,138 @@
+-- cellmap v3 (CELLMAP_V3.md): slopes, map packs, stacked maps, in the xTalk library, with the same
+-- answers as Python (run tests/py_v3_test.py first: it writes tests/_py_v3_walk.txt).
+--   python3 -I OXT-BEYOND/tests/oxt_headless.py --engine beyond LIB_BIT/editor/tests/lc_v3_test.txt
+local tDir, tTags, tLoft, tM2, tV2, tText, tPack, tK, tE, tX, tZ, tY, tR, tWalk, tX0, tZ0, tName, tN, tOK, tFiles, tF, i
+if there is a stack "lib_cellmap" then
+  stop using stack "lib_cellmap"
+  delete stack "lib_cellmap"
+end if
+put "/home/igame3d/projects/LIB_BIT/editor/" into tDir
+start using stack (tDir & "livecode/lib_cellmap.livecodescript")
+put CellMap.TagsFromText(CellMap.ReadText(tDir & "data/tags_default.txt")) into tTags
+-- old maps: every version 1 and 2 file still reads and writes back the same
+put 0 into tN
+put 0 into tOK
+repeat for each item tName in "maps,maps/amazing_couple_mazes,maps/two_rooms"
+  put files(tDir & tName) into tFiles
+  repeat for each line tF in tFiles
+    if not (tF ends with ".cellmap") then next repeat
+    add 1 to tN
+    put CellMap.ReadText(tDir & tName & "/" & tF) into tText
+    if CellMap.ToText(CellMap.FromText(tText)) is tText then add 1 to tOK
+  end repeat
+end repeat
+put ck("every map in maps/ round trips (" & tN & " files)", tOK, tN) & return after tLog
+put ck("there are 19 of them, as Python found", tN, 19) & return after tLog
+put CellMap.Read(tDir & "maps/two_rooms/two_rooms_cellar.cellmap") into tV2
+put ck("a version 2 map stays version 2", tV2["meta"]["version"], 2) & return after tLog
+-- slopes
+put CellMap.Read(tDir & "maps/two_rooms/two_rooms_loft.cellmap") into tLoft
+put ck("the loft is version 3", tLoft["meta"]["version"], 3) & return after tLog
+put ck("slope of 6,2: nw ne se sw", CellMap.Slope(tLoft, 6, 2), "0,60,60,0") & return after tLog
+put ck("a flat cell has no slope", CellMap.Slope(tLoft, 5, 2), empty) & return after tLog
+put CellMap.CellX(tLoft, 6) into tX0
+put CellMap.CellZ(tLoft, 2) into tZ0
+put ck("rise: west edge 0, middle 30, east edge 60", CellMap.RiseAt(tLoft, 6, 2, tX0 - 38, tZ0) && CellMap.RiseAt(tLoft, 6, 2, tX0, tZ0) && CellMap.RiseAt(tLoft, 6, 2, tX0 + 38, tZ0), "0 30 60") & return after tLog
+put ck("60 a cell is not steep", CellMap.Steep(tLoft, 6, 2), false) & return after tLog
+put tLoft into tM2
+CellMap.SetSlope tM2, 4, 4, "0 0 90 90"
+put ck("SetSlope: 90 a cell is steep", CellMap.Steep(tM2, 4, 4), true) & return after tLog
+put CellMap.ToText(tM2) into tText
+put ck("SetSlope writes a third line", line -3 to -1 of tText, "6,2" & tab & "0 60 60 0" & return & "6,3" & tab & "0 60 60 0" & return & "4,4" & tab & "0 0 90 90") & return after tLog
+CellMap.SetSlope tM2, 4, 4, empty
+put ck("flattened again: the same text as the file", CellMap.ToText(tM2) is CellMap.ReadText(tDir & "maps/two_rooms/two_rooms_loft.cellmap"), true) & return after tLog
+put CellMap.Read(tDir & "maps/wizard_pool.cellmap") into tV2
+CellMap.SetSlope tV2, 12, 10, "0,0,20,20"
+put ck("sloping a version 2 map makes it version 3", tV2["meta"]["version"], 3) & return after tLog
+put CellMap.HU(tLoft) into tK
+put CellMap.CellX(tLoft, 4) into tX
+put tZ0 into tZ
+put 1 * tK into tY
+repeat 90
+  put CellMap.Walk(tLoft, tTags, empty, tX, tZ, tY, 4, 0) into tR
+  put item 1 of tR into tX
+  put item 2 of tR into tZ
+  put item 3 of tR into tY
+end repeat
+put ck("one map: up the ramp onto the dais (61 hu)", CellMap.CellAt(tLoft, tX, tZ) && format("%.2f", tY / tK), "8,2 61.00") & return after tLog
+CellMap.SetSlope tM2, 4, 4, "0 0 90 90"
+put CellMap.CellX(tM2, 4) into tX
+put CellMap.CellZ(tM2, 3) into tZ
+put 1 * tK into tY
+repeat 40
+  put CellMap.Walk(tM2, tTags, empty, tX, tZ, tY, 0, 4) into tR
+  put item 1 of tR into tX
+  put item 2 of tR into tZ
+  put item 3 of tR into tY
+end repeat
+put ck("a steep slope cannot be walked up", CellMap.CellAt(tM2, tX, tZ), "4,3") & return after tLog
+put CellMap.CellX(tM2, 4) into tX
+put CellMap.CellZ(tM2, 4) + 30 into tZ
+put 200 * tK into tY
+repeat 3
+  put CellMap.Walk(tM2, tTags, empty, tX, tZ, tY, 0, -4) into tR
+  put item 1 of tR into tX
+  put item 2 of tR into tZ
+  put item 3 of tR into tY
+end repeat
+put ck("dropped onto it, it answers slide and lets you down", item 4 of tR && (tY / tK < 80), "slide true") & return after tLog
+-- the pack
+put CellMap.ReadPack(tDir & "maps/two_rooms/two_rooms.cellpack") into tPack
+put ck("pack text round trip", CellMap.PackToText(tPack) is CellMap.ReadText(tDir & "maps/two_rooms/two_rooms.cellpack"), true) & return after tLog
+put ck("pack: two maps in one place, no problems", tPack["count"] && tPack["maps"][1]["id"] && tPack["maps"][2]["id"] && tPack["maps"][2]["place"] && tPack["maps"][2]["base"] && "[" & tPack["problems"] & "]", "2 cellar loft main 120 []") & return after tLog
+put ck("pack: doors of the ladder cell", CellMap.PackDoors(tPack, "cellar", 2, 2), "ladder" & tab & "loft:2,2" & tab & "the ladder in the corner: up") & return after tLog
+put CellMap.PackEnter(tPack, tTags, empty, empty) into tE
+put item 2 of tE into tX
+put item 3 of tE into tZ
+put item 4 of tE into tY
+put ck("enter: the cellar's @ at 5,4 on the floor", item 1 of tE && CellMap.CellAt(tPack["maps"][1]["map"], tX, tZ) && format("%.2f", tY / tK), "main 5,4 1.00") & return after tLog
+put CellMap.PackEnter(tPack, tTags, empty, "loft:2,2") into tE
+put ck("the ladder leads to the loft floor (121 hu)", format("%.2f", item 4 of tE / tK), "121.00") & return after tLog
+put CellMap.PackStandAt(tPack, "main", tTags, empty, tX, tZ, 1 * tK) into tE
+put ck("under the loft you stand on the cellar floor", format("%.2f", item 1 of tE / tK) && item 2 of tE, "1.00 cellar") & return after tLog
+put CellMap.PackStandAt(tPack, "main", tTags, empty, tX, tZ, 121 * tK) into tE
+put ck("from the loft floor you stand on the loft", format("%.2f", item 1 of tE / tK) && item 2 of tE, "121.00 loft") & return after tLog
+put ck("a broken pack lists its problems", the number of lines of ProblemsOf(tDir), 3) & return after tLog
+-- the same walk as Python, leg by leg: name|dx|dz|steps
+put empty into tWalk
+set the itemDel to "|"
+repeat for each line tName in LegList()
+  put item 2 of tName into tX0
+  put item 3 of tName into tZ0
+  put item 4 of tName into tN
+  put item 1 of tName into tF
+  set the itemDel to comma
+  repeat tN
+    put CellMap.PackWalk(tPack, "main", tTags, empty, tX, tZ, tY, tX0, tZ0) into tR
+    put item 1 of tR into tX
+    put item 2 of tR into tZ
+    put item 3 of tR into tY
+  end repeat
+  put tF & "|" & format("%.2f", tX) & "|" & format("%.2f", tZ) & "|" & format("%.2f", tY / tK) & "|" & item 4 of tR & "|" & item 5 of tR & "|" & item 6 of tR & comma & item 7 of tR & return after tWalk
+  set the itemDel to "|"
+end repeat
+set the itemDel to comma
+put ck("the walk: stairs up, ramp, dais, drop, back down the hole: 12 legs equal to Python's", tWalk is CellMap.ReadText(tDir & "tests/_py_v3_walk.txt"), true) & return after tLog
+put ck("it ends on the cellar's top stair", line -1 of tWalk, "south into the stair hole|84.00|176.00|120.00|climb|cellar|6,6") & return after tLog
+if tLog contains "FAIL the walk" then put tWalk after tLog
+stop using stack "lib_cellmap"
+return tLog
+--HANDLERS--
+function LegList
+  return "west to the wall|-4|0|60" & return & "south to the foot of the stairs|0|4|60" & return & \
+      "east: half way up the stairs|4|0|50" & return & "east: out of the hole onto the loft|4|0|80" & return & \
+      "north: the dais is too high from here|0|-4|60" & return & "west|-4|0|70" & return & "north to row 2|0|-4|60" & return & \
+      "east: on the ramp|4|0|30" & return & "east: up to the goal|4|0|60" & return & "south off the dais (a drop of 60)|0|4|45" & return & \
+      "west|-4|0|42" & return & "south into the stair hole|0|4|60"
+end LegList
+
+-- a pack that names a file outside its folder, a missing file and a door to nowhere
+function ProblemsOf pDir
+  local tPath, tPack
+  put pDir & "tests/_bad.cellpack" into tPath
+  put "[pack]" & return & "name" & tab & "bad" & return & "[maps]" & return & "a" & tab & "../wizard_pool.cellmap" & return & \
+      "b" & tab & "nothing_here.cellmap" & return & "[doors]" & return & "a:1,1" & tab & "door" & tab & "zzz:1,1" & return into URL ("binfile:" & tPath)
+  put CellMap.ReadPack(tPath) into tPack
+  delete file tPath
+  return tPack["problems"]
+end ProblemsOf
