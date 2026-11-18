@@ -217,12 +217,12 @@ tests give the same numbers as before (segments, walks and picks, both engines).
 | `CellMap.PackSegments` / `pack_segments` (a place drawn as one) | done 17 Nov: each map's segments moved by `ox`, `oz` and the pack's base, engine units, the map id as an 8th item |
 | Slopes and packs in `LevelBoxes` (the solid look) | not built: a slope is still a flat box |
 | `Pick` (painting in 3D) on slopes and packs | not built: it sees the flat cell of one map |
-| The checker (E12) | not built |
+| The checker (E12) | done 18 Nov (Opus): `CellMap.Check` / `CheckPack`, `check()` / `check_pack()`: one line a problem (kind, map, col,row, words): slope-trap, slope-all, slope-empty, slope-roof, step (only where it cuts an area off), hole, door, link, start, unreachable (one line an area), and the pack reader's problems. Reachability is the walker's rules cell by cell (ground only, not tower tops). Same lines in Python and xTalk on every map in `maps/` (`tests/py_check_test.py` 22 checks, `tests/lc_check_test.txt` 26, both headless engines). Real findings: Amazing Couple 1-3 have 36 cells behind the gate at 10,10 that no link opens; the cropped wizard pool keeps two links that point off the crop; the 12 mazes have no @ |
 | BitEditor: slope tool, pack panel | not built (section 6) |
 | A game using a pack | `E13_WalkTheMap` (LIB_EDITOR, branch cellmap-v3-followups): M cycles to `two_rooms`, drawn with PackSegments, walked with PackWalk, E climbs the ladder (PackDoors) |
 | Speed of `PackWalk` in a real game | not measured (it asks each map of the place at up to nine points a step) |
 | `LIB_EDITOR/tests/e13_test.sh` against this library | not run here (it starts the windowed standalone) |
 
-For Opus, in order: (1) segments for slopes, then `CellMap.PackSegments` = each map's segments
-moved by its `ox`, `oz` and base; (2) E13 walking `maps/two_rooms`; (3) the BitEditor's Slope tool;
-(4) the pack panel; (5) the checker.
+For Opus, in order: ~~(1) segments for slopes, then `CellMap.PackSegments`; (2) E13 walking
+`maps/two_rooms`~~ (17 Nov); (3) the BitEditor's Slope tool; (4) the pack panel; ~~(5) the checker~~
+(18 Nov; the BitEditor still needs its list: click a line, jump to the cell).

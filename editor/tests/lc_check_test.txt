@@ -1,0 +1,40 @@
+-- The E12 checker (CellMap.Check / CheckPack) in the xTalk library: the same lines as Python
+-- (run tests/py_check_test.py first: it makes tests/_check/ and writes tests/_py_check.txt).
+--   python3 -I LIB_BIT/editor/tests/run_headless.py LIB_BIT/editor/tests/lc_check_test.txt
+--   python3 -I OXT-BEYOND/tests/oxt_headless.py --engine beyond LIB_BIT/editor/tests/lc_check_test.txt
+local tDir, tTags, tWant, tLine, tFile, tGot, tExpect, tAll, tN, tOK, tT, tMap, tBad
+if there is a stack "lib_cellmap" then
+  stop using stack "lib_cellmap"
+  delete stack "lib_cellmap"
+end if
+put "/home/igame3d/projects/LIB_BIT/editor/" into tDir
+start using stack (tDir & "livecode/lib_cellmap.livecodescript")
+put CellMap.TagsFromText(CellMap.ReadText(tDir & "data/tags_default.txt")) into tTags
+put CellMap.ReadText(tDir & "tests/_py_check.txt") into tWant
+put 0 into tN
+put 0 into tOK
+put empty into tFile
+repeat for each line tLine in (tWant & return & "== end")
+  if char 1 to 3 of tLine is "== " then
+    if tFile is not empty then
+      add 1 to tN
+      put the milliseconds into tT
+      if tFile ends with ".cellpack" then
+        put CellMap.CheckPack(CellMap.ReadPack(tDir & tFile), tTags) into tGot
+      else
+        put CellMap.Check(CellMap.Read(tDir & tFile), tTags) into tGot
+      end if
+      put ck(tFile & " (" & (the milliseconds - tT) & " ms): the same lines as Python", tGot, tExpect) & return after tLog
+    end if
+    put char 4 to -1 of tLine into tFile
+    put empty into tExpect
+  else if tLine is not empty then
+    put tLine & return after tExpect
+  end if
+end repeat
+put ck("every file Python checked was checked (" & tN & ")", tN > 20, true) & return after tLog
+put CellMap.Read(tDir & "tests/_check/bad.cellmap") into tMap
+put CellMap.Check(tMap, tTags) into tGot
+put ck("checking does not change the map", tMap is an array and tMap["meta"]["name"] is "bad", true) & return after tLog
+put ck("a slope trap is found with its side", tGot contains ("slope-trap" & tab & "bad" & tab & "6,2" & tab & "a steep slope slides into a wall on its south side"), true) & return after tLog
+return tLog
