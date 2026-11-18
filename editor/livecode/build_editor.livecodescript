@@ -23,7 +23,8 @@ command Build.Editor pDir
    Theme.Begin
    create invisible stack tS
    set the rect of stack tS to 60, 60, 60 + kW, 60 + kH
-   set the title of stack tS to "FOR BILL BitEditor"   -- "<AI name> BitEditor" while an AI drives it (title rule)
+   set the title of stack tS to "FOR OWNER | BitEditor"
+   dispatch "Users.TitleStack" with tS, "BitEditor"   -- LIB_USERS words it, when in use ("Opus | BitEditor" while an AI drives)
    set the textSize of stack tS to 12
    set the resizable of stack tS to false
    set the defaultStack to tS
