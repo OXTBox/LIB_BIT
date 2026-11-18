@@ -22,7 +22,7 @@ Version 2 (CELLMAP_V2.md): floor, ceiling, red, green, blue 0-255 a cell in heig
 hallway), links, objects, stacked maps; levels(), stand_at(), walk(), level_segments(), level_boxes().
 Version 3 (CELLMAP_V3.md): slopes (a [slope] section: four corner rises a cell) and map packs
 (a .cellpack file naming a level's maps: stacked in one place, or joined by doors):
-slope(), rise_at(), steep(), read_pack(), pack_stand_at(), pack_walk(), pack_doors(), pack_enter().
+slope(), rise_at(), steep(), read_pack(), pack_stand_at(), pack_walk(), pack_doors(), pack_enter(), pack_segments(); level_segments() draws slopes.
 """
 import colorsys, json, os, sys
 
@@ -933,6 +933,14 @@ def level_segments(m, tags=None, font=None):
             return 'green'
         return 'wall'
 
+    def corners(r, c):                      # the ground's four corner heights: nw, ne, se, sw (CELLMAP_V3.md 2)
+        g = C[r][c][0]
+        s = slope(m, r, c) if (r, c) not in shape else None
+        return [g + x for x in s] if s else [g, g, g, g]
+
+    # each side's two corner heights, in the order the side runs (west to east, north to south)
+    side_corners = {'n': (0, 1), 'e': (1, 2), 's': (3, 2), 'w': (0, 3)}
+    facing = {'n': 's', 'e': 'w', 's': 'n', 'w': 'e'}
     sides = (('n', -1, 0), ('e', 0, 1), ('s', 1, 0), ('w', 0, -1))
     for r in range(rows):
         for c in range(cols):
@@ -941,9 +949,21 @@ def level_segments(m, tags=None, font=None):
                 continue
             ground, rb, rt, sb, st = col
             water = is_water(m, tags, r, c)
+            k4 = corners(r, c)
             for side, dr, dc in sides:
                 n = col_at(r + dr, c + dc)
-                edge('floor' if n is not None and n[0] == ground else base_class(r, c), ground, r, c, side)
+                a, b = (k4[i] for i in side_corners[side])
+                same = False
+                if n is not None:
+                    n4 = corners(r + dr, c + dc)
+                    same = (a, b) == tuple(n4[i] for i in side_corners[facing[side]])
+                cls = 'floor' if same else base_class(r, c)
+                if a == b:
+                    edge(cls, a, r, c, side)
+                else:                       # a sloped ground edge runs corner to corner
+                    x1, z1 = c * 16 + (16 if side == 'e' else 0), r * 16 + (16 if side == 's' else 0)
+                    x2, z2 = (x1 + 16, z1) if side in 'ns' else (x1, z1 + 16)
+                    ups.add('%d,%d,%d,%d,%d,%d,%s' % (x1, a, z1, x2, b, z2, cls))
                 if rb is not None:
                     edge('ceiling', rb, r, c, side)
                     if rt != rb:
@@ -956,6 +976,12 @@ def level_segments(m, tags=None, font=None):
                     nr, nc = r + dr, c + dc
                     if not (n is not None and is_water(m, tags, nr, nc) and m['floor'][nr][nc] == f):
                         edge('water', f, r, c, side)
+            if k4[0] + k4[2] != k4[1] + k4[3]:   # a twisted cell: its diagonal, through the highest corner
+                hi = k4.index(max(k4))
+                if hi in (0, 2):
+                    ups.add('%d,%d,%d,%d,%d,%d,floor' % (c * 16, k4[0], r * 16, c * 16 + 16, k4[2], r * 16 + 16))
+                else:
+                    ups.add('%d,%d,%d,%d,%d,%d,floor' % (c * 16, k4[3], r * 16 + 16, c * 16 + 16, k4[1], r * 16))
             if water:
                 f = m['floor'][r][c]
                 ups.add('%d,%d,%d,%d,%d,%d,water' % (c * 16, f, r * 16, c * 16 + 16, f, r * 16 + 16))
@@ -982,7 +1008,7 @@ def level_segments(m, tags=None, font=None):
             around = [col_at(r, c) for r, c in cells]
             if all(a is None for a in around):
                 continue
-            gs = [a[0] if a is not None else 0 for a in around]
+            gs = [corners(r, c)[k] if a is not None else 0 for (r, c), a, k in zip(cells, around, (2, 3, 1, 0))]
             lo, hi = min(gs), max(gs)
             if hi - lo > 1:
                 live = [(r, c) for (r, c), a in zip(cells, around) if a is not None]
@@ -1027,6 +1053,23 @@ def seg_to_engine(m, seg):
     def Z(v): return (int(v) / 16 - m['meta']['rows'] / 2) * cell
     def Y(v): return (int(v) + opt(m, 'base')) * k
     return X(f[0]), Y(f[1]), Z(f[2]), X(f[3]), Y(f[4]), Z(f[5]), f[6]
+
+
+def pack_segments(pack, place, tags=None, font=None):
+    """every map of one place drawn together: level_segments of each, moved by its ox, oz and the
+    pack's base (CELLMAP_V3.md 3, 4). Engine units, y up: (x1, y1, z1, x2, y2, z2, class, map id),
+    in the pack's order, each map's lines sorted"""
+    out = []
+    for e in pack_place(pack, place):
+        m = e['map']
+        cell, k = m['meta']['cell'], hu(m)
+        hc, hr = m['meta']['cols'] / 2, m['meta']['rows'] / 2
+        for seg in level_segments(m, tags, font):
+            f = seg.split(',')
+            out.append(((int(f[0]) / 16 - hc) * cell + e['ox'], (int(f[1]) + e['base']) * k, (int(f[2]) / 16 - hr) * cell + e['oz'],
+                        (int(f[3]) / 16 - hc) * cell + e['ox'], (int(f[4]) + e['base']) * k, (int(f[5]) / 16 - hr) * cell + e['oz'],
+                        f[6], e['id']))
+    return out
 
 
 def level_boxes(m, tags=None):

@@ -1385,6 +1385,29 @@ private command cmEdge @pFlat, pClass, pY, pCol, pRow, pSide
    end switch
 end cmEdge
 
+-- the ground's four corner heights "nw,ne,se,sw" of a cell whose column is pC (CELLMAP_V3.md 2);
+-- a glyph-shaped cell (pShaped not empty) and a flat cell have all four at its ground
+private function cmCorners pMap, pC, pShaped, pCol, pRow
+   local tG, tS
+   put item 1 of pC into tG
+   put pMap["slope"][pRow][pCol] into tS
+   if tS is empty or pShaped is not empty then return tG & comma & tG & comma & tG & comma & tG
+   return (tG + item 1 of tS) & comma & (tG + item 2 of tS) & comma & (tG + item 3 of tS) & comma & (tG + item 4 of tS)
+end cmCorners
+
+-- the two corner heights of one side, in the order the side runs (west to east, north to south)
+private function cmSideH pK4, pSide
+   switch pSide
+      case "n"
+         return item 1 of pK4 & comma & item 2 of pK4
+      case "e"
+         return item 2 of pK4 & comma & item 3 of pK4
+      case "s"
+         return item 4 of pK4 & comma & item 3 of pK4
+   end switch
+   return item 1 of pK4 & comma & item 4 of pK4
+end cmSideH
+
 -- the map as line segments, one a line: "x1,y1,z1,x2,y2,z2,class". x and z in sixteenths of a
 -- cell from the map's north-west corner (x east, z south), y in hu (up). Classes: floor, wall,
 -- pit, water, ceiling, green, sky, relief. Rules: CELLMAP_V2.md section 6. Runs along a row or
@@ -1392,7 +1415,7 @@ end cmEdge
 function CellMap.LevelSegments pMap, pTags, pFont
    local tRows, tCols, tSlab, tRelief, tFlat, tUps, tCol, r, c, tC, tN, tGround, tRB, tRT, tSB, tST
    local tSide, dr, dc, tWater, tBase, tClass, f, tEdge, y, i, j, tAround, tCells, tCell, k, tLo, tHi
-   local tShape, tX, tZ
+   local tShape, tX, tZ, tK4, tSideH, tNextH, tFace, tX1, tZ1, tX2, tZ2, tHiK
    local tAnyLive, tAnyRed, tAnyGreen, tRoofLo, tRoofHi, tRoofThick, tSBs, tDistinct, tKey, tRuns, tRun, a, b, tOut, tParts, tNC, tNR, tG
    put pMap["meta"]["rows"] into tRows
    put pMap["meta"]["cols"] into tCols
@@ -1435,17 +1458,37 @@ function CellMap.LevelSegments pMap, pTags, pFont
          else
             put "wall" into tBase
          end if
-         repeat for each word tSide in "n,-1,0 e,0,1 s,1,0 w,0,-1"
+         put cmCorners(pMap, tC, tShape[r][c], c, r) into tK4
+         repeat for each word tSide in "n,-1,0,s e,0,1,w s,1,0,n w,0,-1,e"
             put item 2 of tSide into dr
             put item 3 of tSide into dc
+            put item 4 of tSide into tFace
             put item 1 of tSide into tSide
             put r + dr into tNR
             put c + dc into tNC
             put tCol[tNR][tNC] into tN          -- empty outside the map too
-            if tN is not empty and item 1 of tN is tGround then
-               cmEdge tFlat, "floor", tGround, c - 1, r - 1, tSide
+            put cmSideH(tK4, tSide) into tSideH
+            put tBase into tClass
+            if tN is not empty then
+               put cmSideH(cmCorners(pMap, tN, tShape[tNR][tNC], tNC, tNR), tFace) into tNextH
+               if item 1 of tNextH is item 1 of tSideH and item 2 of tNextH is item 2 of tSideH then put "floor" into tClass
+            end if
+            if item 1 of tSideH is item 2 of tSideH then
+               cmEdge tFlat, tClass, item 1 of tSideH, c - 1, r - 1, tSide
             else
-               cmEdge tFlat, tBase, tGround, c - 1, r - 1, tSide
+               -- a sloped ground edge runs corner to corner
+               put (c - 1) * 16 into tX1
+               if tSide is "e" then add 16 to tX1
+               put (r - 1) * 16 into tZ1
+               if tSide is "s" then add 16 to tZ1
+               if tSide is "n" or tSide is "s" then
+                  put tX1 + 16 into tX2
+                  put tZ1 into tZ2
+               else
+                  put tX1 into tX2
+                  put tZ1 + 16 into tZ2
+               end if
+               put true into tUps[tX1 & comma & item 1 of tSideH & comma & tZ1 & comma & tX2 & comma & item 2 of tSideH & comma & tZ2 & comma & tClass]
             end if
             if tRB is not empty then
                cmEdge tFlat, "ceiling", tRB, c - 1, r - 1, tSide
@@ -1463,6 +1506,18 @@ function CellMap.LevelSegments pMap, pTags, pFont
                if not tG then cmEdge tFlat, "water", f, c - 1, r - 1, tSide
             end if
          end repeat
+         if item 1 of tK4 + item 3 of tK4 is not item 2 of tK4 + item 4 of tK4 then
+            -- a twisted cell: its diagonal, through the highest corner
+            put 1 into tHiK
+            repeat with k = 2 to 4
+               if item k of tK4 > item tHiK of tK4 then put k into tHiK
+            end repeat
+            if tHiK is 1 or tHiK is 3 then
+               put true into tUps[((c - 1) * 16) & comma & item 1 of tK4 & comma & ((r - 1) * 16) & comma & (c * 16) & comma & item 3 of tK4 & comma & (r * 16) & ",floor"]
+            else
+               put true into tUps[((c - 1) * 16) & comma & item 4 of tK4 & comma & (r * 16) & comma & (c * 16) & comma & item 2 of tK4 & comma & ((r - 1) * 16) & ",floor"]
+            end if
+         end if
          if tWater then
             put true into tUps[((c - 1) * 16) & comma & f & comma & ((r - 1) * 16) & comma & (c * 16) & comma & f & comma & (r * 16) & ",water"]
          end if
@@ -1515,7 +1570,7 @@ function CellMap.LevelSegments pMap, pTags, pFont
          put empty into tRoofHi
          put false into tRoofThick
          put empty into tSBs
-         repeat for each word tCell in (j & comma & i) && (j & comma & (i + 1)) && ((j + 1) & comma & i) && ((j + 1) & comma & (i + 1))
+         repeat for each word tCell in (j & comma & i & ",3") && (j & comma & (i + 1) & ",4") && ((j + 1) & comma & i & ",2") && ((j + 1) & comma & (i + 1) & ",1")
             put item 1 of tCell into r
             put item 2 of tCell into c
             put tCol[r][c] into tC
@@ -1524,7 +1579,8 @@ function CellMap.LevelSegments pMap, pTags, pFont
                put "none" & return after tSBs
             else
                put true into tAnyLive
-               put item 1 of tC into tG
+               -- the corner of this cell that touches grid corner i,j (se, sw, ne, nw)
+               put item (item 3 of tCell) of cmCorners(pMap, tC, tShape[r][c], c, r) into tG
                if pMap["red"][r][c] > 0 then put true into tAnyRed
                if pMap["green"][r][c] > 0 and pMap["ceiling"][r][c] is 0 then put true into tAnyGreen
                if item 2 of tC is not empty then
@@ -1630,3 +1686,32 @@ function CellMap.SegToEngine pMap, pSeg
    return ((item 1 of pSeg / 16 - tHalfC) * tCell) & comma & ((item 2 of pSeg + tBase) * tHU) & comma & ((item 3 of pSeg / 16 - tHalfR) * tCell) & comma & \
          ((item 4 of pSeg / 16 - tHalfC) * tCell) & comma & ((item 5 of pSeg + tBase) * tHU) & comma & ((item 6 of pSeg / 16 - tHalfR) * tCell) & comma & item 7 of pSeg
 end CellMap.SegToEngine
+
+-- every map of one place drawn together (CELLMAP_V3.md 3, 4): CellMap.LevelSegments of each, moved by
+-- its ox, oz and the pack's base. Engine units, y up, one a line: "x1,y1,z1,x2,y2,z2,class,map id",
+-- in the pack's order, each map's lines sorted. Python: pack_segments()
+function CellMap.PackSegments pPack, pPlace, pTags, pFont
+   local i, tMap, tCell, tHU, tHalfC, tHalfR, tOX, tOZ, tBase, tSeg, tOut, tId
+   put 1 into i
+   repeat while i <= pPack["count"]
+      if pPack["maps"][i]["place"] is pPlace and pPack["maps"][i]["map"] is an array then
+         put pPack["maps"][i]["map"] into tMap
+         put tMap["meta"]["cell"] into tCell
+         put CellMap.HU(tMap) into tHU
+         put tMap["meta"]["cols"] / 2 into tHalfC
+         put tMap["meta"]["rows"] / 2 into tHalfR
+         put pPack["maps"][i]["ox"] into tOX
+         put pPack["maps"][i]["oz"] into tOZ
+         put pPack["maps"][i]["base"] into tBase
+         put pPack["maps"][i]["id"] into tId
+         repeat for each line tSeg in CellMap.LevelSegments(tMap, pTags, pFont)
+            put ((item 1 of tSeg / 16 - tHalfC) * tCell + tOX) & comma & ((item 2 of tSeg + tBase) * tHU) & comma & ((item 3 of tSeg / 16 - tHalfR) * tCell + tOZ) & comma & \
+                  ((item 4 of tSeg / 16 - tHalfC) * tCell + tOX) & comma & ((item 5 of tSeg + tBase) * tHU) & comma & ((item 6 of tSeg / 16 - tHalfR) * tCell + tOZ) & comma & \
+                  item 7 of tSeg & comma & tId & return after tOut
+         end repeat
+      end if
+      add 1 to i
+   end repeat
+   delete the last char of tOut
+   return tOut
+end CellMap.PackSegments
