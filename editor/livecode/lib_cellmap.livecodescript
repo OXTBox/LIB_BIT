@@ -657,7 +657,7 @@ end CellMap.IsWater
 -- a cell's column in hu: "ground,roof bottom,roof top,slab bottom,slab top" (empty items: no roof,
 -- no slab); empty for empty space or outside the map
 function CellMap.Column pMap, pCol, pRow
-   local f, cl, rd, g, b, tGround, tTop, tOut
+   local f, cl, rd, g, b, tGround, tTop, tOut, tSB, tST
    if pCol < 1 or pRow < 1 or pCol > pMap["meta"]["cols"] or pRow > pMap["meta"]["rows"] then return empty
    put pMap["floor"][pRow][pCol] into f
    if f <= 0 then return empty
@@ -676,15 +676,56 @@ function CellMap.Column pMap, pCol, pRow
       put comma & comma after tOut
    end if
    if b > 0 then
-      put (tTop + b) & comma & (tTop + b + CellMap.Opt(pMap, "slab")) after tOut
+      -- the floating block (CELLMAP_V2.md 3b): From Floor fills under it down to the cell's ground
+      -- (one solid pillar), From Ceiling raises its top to the map's top; both: floor to top
+      put tTop + b into tSB
+      put tSB + CellMap.Opt(pMap, "slab") into tST
+      if pMap["meta"]["fromCeiling"] is 1 then put max(tST, cmTop(pMap)) into tST
+      if pMap["meta"]["fromFloor"] is 1 then return tST & ",,,,"
+      put tSB & comma & tST after tOut
    else
       put comma after tOut
    end if
    return tOut
 end CellMap.Column
 
+-- the map's top in hu (where From Ceiling blocks reach): the map's own `top`, else the highest
+-- point of any cell with both toggles off (slab tops, roof tops, grounds; slopes left out)
+function CellMap.Top pMap
+   local tFlat, r, c, tC, tTop, tItem
+   if pMap["meta"]["top"] is a number then return pMap["meta"]["top"]
+   put pMap into tFlat
+   delete variable tFlat["meta"]["fromFloor"]
+   delete variable tFlat["meta"]["fromCeiling"]
+   put 0 into tTop
+   put 1 into r
+   repeat while r <= pMap["meta"]["rows"]
+      put 1 into c
+      repeat while c <= pMap["meta"]["cols"]
+         put CellMap.Column(tFlat, c, r) into tC
+         repeat for each item tItem in tC
+            if tItem is a number and tItem > tTop then put tItem into tTop
+         end repeat
+         add 1 to c
+      end repeat
+      add 1 to r
+   end repeat
+   return tTop
+end CellMap.Top
+
+private function cmTop pMap
+   if pMap["pinnedTop"] is a number then return pMap["pinnedTop"]
+   return CellMap.Top(pMap)
+end cmTop
+
+-- work out the map's top once for a handler that asks for many columns (not saved: not in meta)
+private command cmPinTop @pMap
+   if pMap["meta"]["fromCeiling"] is 1 and pMap["pinnedTop"] is not a number then put CellMap.Top(pMap) into pMap["pinnedTop"]
+end cmPinTop
+
 -- where an actor can stand in a cell: lines "top,air above" in hu, lowest first
 function CellMap.Levels pMap, pCol, pRow
+   cmPinTop pMap
    return cmLevels(CellMap.Column(pMap, pCol, pRow))
 end CellMap.Levels
 
@@ -922,6 +963,7 @@ end cmPoint
 -- no rise at all on a steep slope.
 function CellMap.StandAt pMap, pTags, pFont, pX, pZ, pY, pCentre
    local tP, tYH, tBest, tLine, tTop, tAir, i, tRise, tStep, tHead
+   cmPinTop pMap
    put cmPoint(pMap, pTags, pFont, pX, pZ) into tP
    if tP is not an array then return empty
    if tP["levels"] is empty then return empty
@@ -952,6 +994,7 @@ end CellMap.GroundAt
 -- off a ledge) may stay in it, so the actor can walk away.
 function CellMap.Fits pMap, pTags, pFont, pX, pZ, pY, pRadius, pFromX, pFromZ
    local ax, az
+   cmPinTop pMap
    repeat for each item ax in (-pRadius) & comma & pRadius
       repeat for each item az in (-pRadius) & comma & pRadius
          if CellMap.StandAt(pMap, pTags, pFont, pX + ax, pZ + az, pY) is empty then
@@ -969,6 +1012,7 @@ end CellMap.Fits
 function CellMap.Walk pMap, pTags, pFont, pX, pZ, pY, pDX, pDZ, pRadius
    local tTry, tNY, tCell, tEffect
    if pRadius is empty then put 12 into pRadius
+   cmPinTop pMap
    repeat for each line tTry in (pDX & comma & pDZ) & return & (pDX & comma & 0) & return & (0 & comma & pDZ)
       if item 1 of tTry is 0 and item 2 of tTry is 0 then next repeat
       put CellMap.Fits(pMap, pTags, pFont, pX + item 1 of tTry, pZ + item 2 of tTry, pY, pRadius, pX, pZ) into tNY
@@ -1421,6 +1465,7 @@ function CellMap.LevelSegments pMap, pTags, pFont
    put pMap["meta"]["cols"] into tCols
    put CellMap.Opt(pMap, "slab") into tSlab
    put CellMap.Opt(pMap, "relief") into tRelief
+   cmPinTop pMap
    put 1 into r
    repeat while r <= tRows
       put 1 into c
@@ -1494,7 +1539,7 @@ function CellMap.LevelSegments pMap, pTags, pFont
                cmEdge tFlat, "ceiling", tRB, c - 1, r - 1, tSide
                if tRT is not tRB then cmEdge tFlat, "green", tRT, c - 1, r - 1, tSide
             end if
-            if tSB is not empty and not (tN is not empty and item 4 of tN is tSB) then
+            if tSB is not empty and not (tN is not empty and item 4 of tN is tSB and item 5 of tN is tST) then
                cmEdge tFlat, "sky", tSB, c - 1, r - 1, tSide
                cmEdge tFlat, "sky", tST, c - 1, r - 1, tSide
             end if
@@ -1591,7 +1636,7 @@ function CellMap.LevelSegments pMap, pTags, pFont
                if item 4 of tC is empty then
                   put "none" & return after tSBs
                else
-                  put item 4 of tC & return after tSBs
+                  put item 4 of tC & "/" & item 5 of tC & return after tSBs        -- slab bottom / top
                end if
             end if
             if tLo is empty or tG < tLo then put tG into tLo
@@ -1625,7 +1670,11 @@ function CellMap.LevelSegments pMap, pTags, pFont
             if the number of lines of the keys of tDistinct > 1 then
                repeat for each key k in tDistinct
                   if k is "none" then next repeat
-                  put true into tUps[(i * 16) & comma & k & comma & (j * 16) & comma & (i * 16) & comma & (k + tSlab) & comma & (j * 16) & ",sky"]
+                  set the itemDel to "/"
+                  put item 1 of k into tX1
+                  put item 2 of k into tX2
+                  set the itemDel to comma
+                  put true into tUps[(i * 16) & comma & tX1 & comma & (j * 16) & comma & (i * 16) & comma & tX2 & comma & (j * 16) & ",sky"]
                end repeat
             end if
          end if

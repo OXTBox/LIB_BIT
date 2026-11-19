@@ -1,0 +1,71 @@
+-- From Floor / From Ceiling (CELLMAP_V2.md section 3b), the xTalk library, with the same answers as
+-- Python (run tests/py_fill_test.py first: it writes tests/_fill/, a scratch folder).
+--   flock /tmp/oxt_headless.lock python3 -I OXT-BEYOND/tests/oxt_headless.py --engine both LIB_BIT/editor/tests/lc_fill_test.txt
+local tDir, tTags, tOld, tF, tC, tB, tT, tText, tAll, tName, tSegs, tX, tZ, tY, tR, tWalks
+if there is a stack "lib_cellmap" then
+  stop using stack "lib_cellmap"
+  delete stack "lib_cellmap"
+end if
+put "/home/igame3d/projects/LIB_BIT/editor/" into tDir
+start using stack (tDir & "livecode/lib_cellmap.livecodescript")
+put CellMap.TagsFromText(CellMap.ReadText(tDir & "data/tags_default.txt")) into tTags
+put CellMap.ReadText(tDir & "tests/_fill/fill_test.cellmap") into tText
+put CellMap.FromText(tText) into tOld
+put ck("an old map reads and writes back the same", CellMap.ToText(tOld) is tText, true) & return after tLog
+put ck("an old map: both toggles off", tOld["meta"]["fromFloor"] & "/" & tOld["meta"]["fromCeiling"], "/") & return after tLog
+put ck("both off: the block floats, as before", CellMap.Column(tOld, 3, 2), "1,,,91,101") & return after tLog
+put ck("the map top: the tall block", CellMap.Top(tOld), 150) & return after tLog
+put tOld into tF
+put 1 into tF["meta"]["fromFloor"]
+put tOld into tC
+put 1 into tC["meta"]["fromCeiling"]
+put tF into tB
+put 1 into tB["meta"]["fromCeiling"]
+put ck("From Floor: one solid pillar up to the block top", CellMap.Column(tF, 3, 2), "101,,,,") & return after tLog
+put ck("From Floor: you stand only on top", CellMap.Levels(tF, 3, 2), "101,9999") & return after tLog
+put ck("From Ceiling: the block reaches the map top", CellMap.Column(tC, 3, 2), "1,,,91,150") & return after tLog
+put ck("From Ceiling: still room under it", CellMap.Levels(tC, 3, 2), "1,90" & return & "150,9999") & return after tLog
+put ck("both: floor to top", CellMap.Column(tB, 3, 2), "150,,,,") & return after tLog
+put tC into tT
+put 200 into tT["meta"]["top"]
+put ck("a map may name its own top", CellMap.Column(tT, 3, 2), "1,,,91,200") & return after tLog
+put ck("cells without blue are not touched", CellMap.Column(tB, 1, 1), "1,,,,") & return after tLog
+-- saved and loaded: the same file Python wrote
+put CellMap.ReadText(tDir & "tests/_fill/fill_both.cellmap") into tText
+put ck("saved with both on: the same text as Python's", CellMap.ToText(tB) is tText, true) & return after tLog
+put CellMap.FromText(tText) into tT
+put ck("loaded: both toggles back", tT["meta"]["fromFloor"] & "/" & tT["meta"]["fromCeiling"], "1/1") & return after tLog
+-- the lines and the walk east along row 2, for all four, as Python
+put empty into tAll
+repeat for each item tName in "off,floor,ceiling,both"
+  switch tName
+    case "off"
+      put tOld into tT
+      break
+    case "floor"
+      put tF into tT
+      break
+    case "ceiling"
+      put tC into tT
+      break
+    case "both"
+      put tB into tT
+      break
+  end switch
+  put CellMap.LevelSegments(tT, tTags, empty) into tSegs
+  put "==" && tName && the number of lines of tSegs & return & tSegs & return after tAll
+  put CellMap.CellX(tT, 1) into tX
+  put CellMap.CellZ(tT, 2) into tZ
+  put CellMap.HU(tT) into tY
+  repeat 40 times
+    put CellMap.Walk(tT, tTags, empty, tX, tZ, tY, 4, 0) into tR
+    put item 1 of tR into tX
+    put item 2 of tR into tZ
+    put item 3 of tR into tY
+  end repeat
+  put "walk" && item 1 of CellMap.CellAt(tT, tX, tZ) & return after tAll
+  put item 1 of CellMap.CellAt(tT, tX, tZ) & comma after tWalks
+end repeat
+put ck("walk east: under floating blocks, stopped by pillars", tWalks, "3,2,3,2,") & return after tLog
+put ck("the four maps draw the same lines and walk the same as Python's", tAll is CellMap.ReadText(tDir & "tests/_fill/_py_fill_segments.txt"), true) & return after tLog
+return tLog

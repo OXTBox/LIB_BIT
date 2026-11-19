@@ -472,7 +472,37 @@ def column(m, r, c):
     rb, rt = (cl, cl + g) if cl > 0 else (None, None)
     top = rt if cl > 0 else ground
     sb, st = (top + b, top + b + opt(m, 'slab')) if b > 0 else (None, None)
+    if b > 0:
+        # the floating block (CELLMAP_V2.md 3b): From Floor fills under it down to the cell's ground
+        # (one solid pillar), From Ceiling raises its top to the map's top; both: floor to top
+        if m['meta'].get('fromCeiling') == 1:
+            st = max(st, m['_top'] if '_top' in m else map_top(m))
+        if m['meta'].get('fromFloor') == 1:
+            return st, None, None, None, None
     return ground, rb, rt, sb, st
+
+
+def map_top(m):
+    """the map's top in hu (where From Ceiling blocks reach): the map's own `top`, else the highest
+    point of any cell with both toggles off (slab tops, roof tops, grounds; slopes left out)"""
+    if isinstance(m['meta'].get('top'), (int, float)):
+        return m['meta']['top']
+    flat = dict(m, meta={k: v for k, v in m['meta'].items() if k not in ('fromFloor', 'fromCeiling')})
+    flat.pop('_top', None)
+    top = 0
+    for r in range(m['meta']['rows']):
+        for c in range(m['meta']['cols']):
+            col = column(flat, r, c)
+            if col is not None:
+                top = max([top] + [v for v in col if v is not None])
+    return top
+
+
+def pin_top(m):
+    """the same map with its top worked out once (key '_top', never written to the file)"""
+    if m['meta'].get('fromCeiling') == 1 and '_top' not in m:
+        return dict(m, _top=map_top(m))
+    return m
 
 
 NO_ROOF = 9999
@@ -660,6 +690,7 @@ def stand_at(m, tags, font, x, z, y, centre=False):
     """the height (engine units) an actor now at height y would stand at on point x,z; None = cannot.
     Blocked by: outside, empty space, a tag whose effect is block or locked, a rise over `step`,
     less than `head` of air. centre (the actor's middle, not its rim): no rise at all on a steep slope."""
+    m = pin_top(m)
     p = point_levels(m, tags, font, x, z)
     if p is None or not p['levels']:
         return None
@@ -680,6 +711,7 @@ def ground_at(m, tags, font, x, z, y=1e9):
 def walk(m, tags, font, x, z, y, dx, dz, radius=12):
     """move an actor (a circle) by dx,dz, sliding along what blocks it: (x, z, y, effect of the cell it is in).
     On a steep slope a `path` or `none` cell answers `slide`."""
+    m = pin_top(m)
     def fits(nx, nz):
         for ax in (-radius, radius):
             for az in (-radius, radius):
@@ -1171,6 +1203,7 @@ def level_segments(m, tags=None, font=None):
     """the map as line segments 'x1,y1,z1,x2,y2,z2,class': x and z in sixteenths of a cell from the
     map's north-west corner (x east, z south), y in hu (up). Rules: CELLMAP_V2.md section 6.
     Sorted; runs along a row or column are merged. Scale with seg_to_engine()."""
+    m = pin_top(m)
     tags = tags or tag_lookup()
     rows, cols = m['meta']['rows'], m['meta']['cols']
     slab, relief = opt(m, 'slab'), opt(m, 'relief')
@@ -1239,7 +1272,7 @@ def level_segments(m, tags=None, font=None):
                     edge('ceiling', rb, r, c, side)
                     if rt != rb:
                         edge('green', rt, r, c, side)
-                if sb is not None and not (n is not None and n[3] == sb):
+                if sb is not None and not (n is not None and n[3] == sb and n[4] == st):
                     edge('sky', sb, r, c, side)
                     edge('sky', st, r, c, side)
                 if water:
@@ -1292,10 +1325,10 @@ def level_segments(m, tags=None, font=None):
                 if hi > lo:
                     cls = 'green' if any(a[2] > a[1] for a in roofs) else 'ceiling'
                     ups.add('%d,%d,%d,%d,%d,%d,%s' % (i * 16, lo, j * 16, i * 16, hi, j * 16, cls))
-            sbs = [a[3] if a is not None else None for a in around]
+            sbs = [(a[3], a[4]) if a is not None else None for a in around]       # slab bottom, top
             if len(set(sbs)) > 1:
-                for s in sorted(set(x for x in sbs if x is not None)):
-                    ups.add('%d,%d,%d,%d,%d,%d,sky' % (i * 16, s, j * 16, i * 16, s + slab, j * 16))
+                for s, t in set(x for x in sbs if x is not None and x[0] is not None):
+                    ups.add('%d,%d,%d,%d,%d,%d,sky' % (i * 16, s, j * 16, i * 16, t, j * 16))
     out = set(ups)
     for (cls, y, axis, fixed), runs in flat.items():
         runs = sorted(set(runs))
@@ -1346,6 +1379,7 @@ def pack_segments(pack, place, tags=None, font=None):
 def level_boxes(m, tags=None):
     """the solid look (xt3d): one box a column part, engine units, y up, centre + size:
     (x, y, z, width, height, depth, class); class ground / roof / slab / water"""
+    m = pin_top(m)
     tags = tags or tag_lookup()
     k, cell, out = hu(m), m['meta']['cell'], []
     deep = min([0] + [column(m, r, c)[0] for r in range(m['meta']['rows']) for c in range(m['meta']['cols'])
