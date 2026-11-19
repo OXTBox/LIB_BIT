@@ -66,8 +66,7 @@ The heroes are about 83 hu tall, so a standard hallway (100) is 20% taller than 
 - **red** digs down from the floor: the walking surface is `floor - red`. With a water tag
   (`w` shallow, `}` deep) the water's surface is drawn at the floor level and the actor wades
   or swims on the bottom; with no water tag it is a dry pit.
-- **ceiling** is the underside of a roof. A cell with ceiling at or below its ground is solid
-  to the roof (a wall inside a building).
+- **ceiling** is the underside of a roof.
 - **green** builds up: on top of the roof when there is one (a thick roof, a second storey's
   mass), otherwise on top of the floor (a wall or tower taller than the greys reach:
   floor 255 + green 255 = 510 hu, five hallways high).
