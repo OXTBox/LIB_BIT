@@ -115,6 +115,24 @@ set the itemDel to comma
 put ck("the walk: stairs up, ramp, dais, drop, back down the hole: 12 legs equal to Python's", tWalk is CellMap.ReadText(tDir & "tests/_py_v3_walk.txt"), true) & return after tLog
 put ck("it ends on the cellar's top stair", line -1 of tWalk, "south into the stair hole|84.00|176.00|120.00|climb|cellar|6,6") & return after tLog
 if tLog contains "FAIL the walk" then put tWalk after tLog
+-- drawing slopes and packs (A-92 1): the same lines as Python (tests/_py_v3_segments.txt)
+local tSegs, tTw, tPS, tSegLine, tAll
+put CellMap.LevelSegments(tLoft, tTags, empty) into tSegs
+put ck("the ramp's north edge rises 1 to 61, a wall", tSegs contains "80,1,16,96,61,16,wall", true) & return after tLog
+put tLoft into tTw
+CellMap.SetSlope tTw, 4, 4, "0 0 0 30"
+put CellMap.LevelSegments(tTw, tTags, empty) into tTw
+put ck("a twisted cell gets its diagonal", tTw contains "48,31,64,64,1,48,floor", true) & return after tLog
+put empty into tPS
+repeat for each line tSegLine in CellMap.PackSegments(tPack, "main", tTags, empty)
+  repeat with i = 1 to 6
+    put format("%.2f", item i of tSegLine) into item i of tSegLine
+  end repeat
+  put tSegLine & return after tPS
+end repeat
+put tSegs & return & "--" & return & tTw & return & "--" & return & tPS into tAll
+put ck("slopes and the pack draw the same lines as Python's", tAll is CellMap.ReadText(tDir & "tests/_py_v3_segments.txt"), true) & return after tLog
+if tLog contains "FAIL slopes and the pack" then put the number of lines of tAll && the number of lines of CellMap.ReadText(tDir & "tests/_py_v3_segments.txt") & return after tLog
 stop using stack "lib_cellmap"
 return tLog
 --HANDLERS--

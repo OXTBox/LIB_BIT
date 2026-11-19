@@ -1385,6 +1385,29 @@ private command cmEdge @pFlat, pClass, pY, pCol, pRow, pSide
    end switch
 end cmEdge
 
+-- the ground's four corner heights "nw,ne,se,sw" of a cell whose column is pC (CELLMAP_V3.md 2);
+-- a glyph-shaped cell (pShaped not empty) and a flat cell have all four at its ground
+private function cmCorners pMap, pC, pShaped, pCol, pRow
+   local tG, tS
+   put item 1 of pC into tG
+   put pMap["slope"][pRow][pCol] into tS
+   if tS is empty or pShaped is not empty then return tG & comma & tG & comma & tG & comma & tG
+   return (tG + item 1 of tS) & comma & (tG + item 2 of tS) & comma & (tG + item 3 of tS) & comma & (tG + item 4 of tS)
+end cmCorners
+
+-- the two corner heights of one side, in the order the side runs (west to east, north to south)
+private function cmSideH pK4, pSide
+   switch pSide
+      case "n"
+         return item 1 of pK4 & comma & item 2 of pK4
+      case "e"
+         return item 2 of pK4 & comma & item 3 of pK4
+      case "s"
+         return item 4 of pK4 & comma & item 3 of pK4
+   end switch
+   return item 1 of pK4 & comma & item 4 of pK4
+end cmSideH
+
 -- the map as line segments, one a line: "x1,y1,z1,x2,y2,z2,class". x and z in sixteenths of a
 -- cell from the map's north-west corner (x east, z south), y in hu (up). Classes: floor, wall,
 -- pit, water, ceiling, green, sky, relief. Rules: CELLMAP_V2.md section 6. Runs along a row or
@@ -1392,7 +1415,7 @@ end cmEdge
 function CellMap.LevelSegments pMap, pTags, pFont
    local tRows, tCols, tSlab, tRelief, tFlat, tUps, tCol, r, c, tC, tN, tGround, tRB, tRT, tSB, tST
    local tSide, dr, dc, tWater, tBase, tClass, f, tEdge, y, i, j, tAround, tCells, tCell, k, tLo, tHi
-   local tShape, tX, tZ
+   local tShape, tX, tZ, tK4, tSideH, tNextH, tFace, tX1, tZ1, tX2, tZ2, tHiK
    local tAnyLive, tAnyRed, tAnyGreen, tRoofLo, tRoofHi, tRoofThick, tSBs, tDistinct, tKey, tRuns, tRun, a, b, tOut, tParts, tNC, tNR, tG
    put pMap["meta"]["rows"] into tRows
    put pMap["meta"]["cols"] into tCols
@@ -1435,17 +1458,37 @@ function CellMap.LevelSegments pMap, pTags, pFont
          else
             put "wall" into tBase
          end if
-         repeat for each word tSide in "n,-1,0 e,0,1 s,1,0 w,0,-1"
+         put cmCorners(pMap, tC, tShape[r][c], c, r) into tK4
+         repeat for each word tSide in "n,-1,0,s e,0,1,w s,1,0,n w,0,-1,e"
             put item 2 of tSide into dr
             put item 3 of tSide into dc
+            put item 4 of tSide into tFace
             put item 1 of tSide into tSide
             put r + dr into tNR
             put c + dc into tNC
             put tCol[tNR][tNC] into tN          -- empty outside the map too
-            if tN is not empty and item 1 of tN is tGround then
-               cmEdge tFlat, "floor", tGround, c - 1, r - 1, tSide
+            put cmSideH(tK4, tSide) into tSideH
+            put tBase into tClass
+            if tN is not empty then
+               put cmSideH(cmCorners(pMap, tN, tShape[tNR][tNC], tNC, tNR), tFace) into tNextH
+               if item 1 of tNextH is item 1 of tSideH and item 2 of tNextH is item 2 of tSideH then put "floor" into tClass
+            end if
+            if item 1 of tSideH is item 2 of tSideH then
+               cmEdge tFlat, tClass, item 1 of tSideH, c - 1, r - 1, tSide
             else
-               cmEdge tFlat, tBase, tGround, c - 1, r - 1, tSide
+               -- a sloped ground edge runs corner to corner
+               put (c - 1) * 16 into tX1
+               if tSide is "e" then add 16 to tX1
+               put (r - 1) * 16 into tZ1
+               if tSide is "s" then add 16 to tZ1
+               if tSide is "n" or tSide is "s" then
+                  put tX1 + 16 into tX2
+                  put tZ1 into tZ2
+               else
+                  put tX1 into tX2
+                  put tZ1 + 16 into tZ2
+               end if
+               put true into tUps[tX1 & comma & item 1 of tSideH & comma & tZ1 & comma & tX2 & comma & item 2 of tSideH & comma & tZ2 & comma & tClass]
             end if
             if tRB is not empty then
                cmEdge tFlat, "ceiling", tRB, c - 1, r - 1, tSide
@@ -1463,6 +1506,18 @@ function CellMap.LevelSegments pMap, pTags, pFont
                if not tG then cmEdge tFlat, "water", f, c - 1, r - 1, tSide
             end if
          end repeat
+         if item 1 of tK4 + item 3 of tK4 is not item 2 of tK4 + item 4 of tK4 then
+            -- a twisted cell: its diagonal, through the highest corner
+            put 1 into tHiK
+            repeat with k = 2 to 4
+               if item k of tK4 > item tHiK of tK4 then put k into tHiK
+            end repeat
+            if tHiK is 1 or tHiK is 3 then
+               put true into tUps[((c - 1) * 16) & comma & item 1 of tK4 & comma & ((r - 1) * 16) & comma & (c * 16) & comma & item 3 of tK4 & comma & (r * 16) & ",floor"]
+            else
+               put true into tUps[((c - 1) * 16) & comma & item 4 of tK4 & comma & (r * 16) & comma & (c * 16) & comma & item 2 of tK4 & comma & ((r - 1) * 16) & ",floor"]
+            end if
+         end if
          if tWater then
             put true into tUps[((c - 1) * 16) & comma & f & comma & ((r - 1) * 16) & comma & (c * 16) & comma & f & comma & (r * 16) & ",water"]
          end if
@@ -1515,7 +1570,7 @@ function CellMap.LevelSegments pMap, pTags, pFont
          put empty into tRoofHi
          put false into tRoofThick
          put empty into tSBs
-         repeat for each word tCell in (j & comma & i) && (j & comma & (i + 1)) && ((j + 1) & comma & i) && ((j + 1) & comma & (i + 1))
+         repeat for each word tCell in (j & comma & i & ",3") && (j & comma & (i + 1) & ",4") && ((j + 1) & comma & i & ",2") && ((j + 1) & comma & (i + 1) & ",1")
             put item 1 of tCell into r
             put item 2 of tCell into c
             put tCol[r][c] into tC
@@ -1524,7 +1579,8 @@ function CellMap.LevelSegments pMap, pTags, pFont
                put "none" & return after tSBs
             else
                put true into tAnyLive
-               put item 1 of tC into tG
+               -- the corner of this cell that touches grid corner i,j (se, sw, ne, nw)
+               put item (item 3 of tCell) of cmCorners(pMap, tC, tShape[r][c], c, r) into tG
                if pMap["red"][r][c] > 0 then put true into tAnyRed
                if pMap["green"][r][c] > 0 and pMap["ceiling"][r][c] is 0 then put true into tAnyGreen
                if item 2 of tC is not empty then
@@ -1630,3 +1686,561 @@ function CellMap.SegToEngine pMap, pSeg
    return ((item 1 of pSeg / 16 - tHalfC) * tCell) & comma & ((item 2 of pSeg + tBase) * tHU) & comma & ((item 3 of pSeg / 16 - tHalfR) * tCell) & comma & \
          ((item 4 of pSeg / 16 - tHalfC) * tCell) & comma & ((item 5 of pSeg + tBase) * tHU) & comma & ((item 6 of pSeg / 16 - tHalfR) * tCell) & comma & item 7 of pSeg
 end CellMap.SegToEngine
+
+-- every map of one place drawn together (CELLMAP_V3.md 3, 4): CellMap.LevelSegments of each, moved by
+-- its ox, oz and the pack's base. Engine units, y up, one a line: "x1,y1,z1,x2,y2,z2,class,map id",
+-- in the pack's order, each map's lines sorted. Python: pack_segments()
+function CellMap.PackSegments pPack, pPlace, pTags, pFont
+   local i, tMap, tCell, tHU, tHalfC, tHalfR, tOX, tOZ, tBase, tSeg, tOut, tId
+   put 1 into i
+   repeat while i <= pPack["count"]
+      if pPack["maps"][i]["place"] is pPlace and pPack["maps"][i]["map"] is an array then
+         put pPack["maps"][i]["map"] into tMap
+         put tMap["meta"]["cell"] into tCell
+         put CellMap.HU(tMap) into tHU
+         put tMap["meta"]["cols"] / 2 into tHalfC
+         put tMap["meta"]["rows"] / 2 into tHalfR
+         put pPack["maps"][i]["ox"] into tOX
+         put pPack["maps"][i]["oz"] into tOZ
+         put pPack["maps"][i]["base"] into tBase
+         put pPack["maps"][i]["id"] into tId
+         repeat for each line tSeg in CellMap.LevelSegments(tMap, pTags, pFont)
+            put ((item 1 of tSeg / 16 - tHalfC) * tCell + tOX) & comma & ((item 2 of tSeg + tBase) * tHU) & comma & ((item 3 of tSeg / 16 - tHalfR) * tCell + tOZ) & comma & \
+                  ((item 4 of tSeg / 16 - tHalfC) * tCell + tOX) & comma & ((item 5 of tSeg + tBase) * tHU) & comma & ((item 6 of tSeg / 16 - tHalfR) * tCell + tOZ) & comma & \
+                  item 7 of tSeg & comma & tId & return after tOut
+         end repeat
+      end if
+      add 1 to i
+   end repeat
+   delete the last char of tOut
+   return tOut
+end CellMap.PackSegments
+
+######################################################################################
+## The checker (E12, CELLMAP_V3.md 2 and 6): the same lines as cellmap.py's check / check_pack.
+## One problem a line: kind TAB map id TAB col,row TAB plain words, in a fixed order (the checks in
+## the order below, maps in the pack's order, cells row by row).
+## Kinds: pack, start, link, slope-empty, slope-all, slope-roof, slope-trap, door, hole, step, unreachable.
+## Reachability is the walker's rules cell by cell, on the ground of each cell (not a tower's roof
+## top): up no more than `step`, at least `head` of air, a drop only through air, never up a steep
+## slope; stacked maps of one place together; doors and teleport links join cells; locked doors open.
+##   CellMap.Check(tMap, tTags)        one map (it is not changed)
+##   CellMap.CheckPack(tPack, tTags)   a pack from CellMap.ReadPack
+######################################################################################
+
+-- the four sides, N E S W: "dr,dc,this edge's two corners (items of a slope),the side opposite"
+constant kSides = "-1,0,1,2,3|0,1,2,3,4|1,0,3,4,1|0,-1,4,1,2"
+constant kSideWords = "north,east,south,west"
+local sCheckTags     -- the tag table of the check running (cmAir reads it)
+
+function CellMap.Check pMap, pTags
+   local tPack, tId
+   CellMap.Upgrade pMap
+   put pMap["meta"]["name"] into tId
+   if tId is empty then put "map" into tId
+   put tId into tPack["meta"]["name"]
+   put tId into tPack["meta"]["start"]
+   put 1 into tPack["count"]
+   put tId into tPack["maps"][1]["id"]
+   put "main" into tPack["maps"][1]["place"]
+   put 0 into tPack["maps"][1]["base"]
+   put "1,1" into tPack["maps"][1]["at"]
+   put pMap into tPack["maps"][1]["map"]
+   put empty into tPack["problems"]
+   return CellMap.CheckPack(tPack, pTags)
+end CellMap.Check
+
+-- one side's numbers (see kSides)
+private function cmSide pSide, pWhich
+   local tSide
+   set the itemDel to "|"
+   put item pSide of kSides into tSide
+   set the itemDel to comma
+   return item pWhich of tSide
+end cmSide
+
+-- hu (in the map) of a cell's ground at one edge: leaving = the highest point of the edge (none of a
+-- steep cell: it slides to its lowest), else the lowest point of the edge
+private function cmEdgeH pMap, pCol, pRow, pSide, pLeaving
+   local tCol, g, tS, a, b
+   put CellMap.Column(pMap, pCol, pRow) into tCol
+   put item 1 of tCol into g
+   put pMap["slope"][pRow][pCol] into tS
+   if tS is empty then return g
+   put item cmSide(pSide, 3) of tS into a
+   put item cmSide(pSide, 4) of tS into b
+   if pLeaving then
+      if CellMap.Steep(pMap, pCol, pRow) then return g + min(tS)
+      return g + max(a, b)
+   end if
+   return g + min(a, b)
+end cmEdgeH
+
+private function cmBlocked pMap, pTags, pCol, pRow
+   return CellMap.TagInfo(pMap, pTags, pMap["tags"][pRow][pCol], "effect") is "block"
+end cmBlocked
+
+-- "col,row" (decimals cut) as "col,row" of whole numbers, or empty
+private function cmCR pText
+   if the number of items of pText is not 2 then return empty
+   if the last char of pText is comma then return empty
+   if item 1 of pText is not a number then return empty
+   if item 2 of pText is not a number then return empty
+   return trunc(item 1 of pText) & comma & trunc(item 2 of pText)
+end cmCR
+
+private function cmIn pMap, pCR
+   local c, r
+   if pCR is empty then return false
+   put item 1 of pCR into c
+   put item 2 of pCR into r
+   if c < 1 or r < 1 then return false
+   if c > pMap["meta"]["cols"] or r > pMap["meta"]["rows"] then return false
+   return true
+end cmIn
+
+private function cmLine pKind, pId, pAt, pWords
+   return pKind & tab & pId & tab & pAt & tab & pWords & return
+end cmLine
+
+-- the checks of one map alone: links, then slopes cell by cell
+private function cmCheckOne pMap, pTags, pId
+   local tOut, i, tK, tType, tObjs, tTo, tS, tCol, tCol2, r, c, tSide, tOpp, dr, dc, a, b, tLow, tS2, tWhere, tStep, tMin
+   put CellMap.Opt(pMap, "step") into tStep
+   put 1 into i
+   repeat while i <= CellMap.Count(pMap["objects"])
+      put pMap["objects"][i]["id"] & return after tObjs
+      add 1 to i
+   end repeat
+   put 1 into i
+   repeat while i <= CellMap.Count(pMap["links"])
+      put pMap["links"][i] into tK
+      add 1 to i
+      put tK["type"] into tType
+      if tType is empty then put "plain" into tType
+      if not cmIn(pMap, cmCR(tK["from"])) then
+         put cmLine("link", pId, tK["from"], "a" && tType && "link from outside the map") after tOut
+         next repeat
+      end if
+      if the number of words of tK["to"] is 0 then
+         put cmLine("link", pId, tK["from"], "a" && tType && "link with no target") after tOut
+      end if
+      repeat for each word tTo in tK["to"]
+         if char 1 of tTo is "@" then
+            if char 2 to -1 of tTo is not among the lines of tObjs then
+               put cmLine("link", pId, tK["from"], "a" && tType && "link to" && tTo & ": no such object") after tOut
+            end if
+         else if not cmIn(pMap, cmCR(tTo)) then
+            put cmLine("link", pId, tK["from"], "a" && tType && "link to" && tTo & ": outside the map") after tOut
+         end if
+      end repeat
+   end repeat
+   put 1 into r
+   repeat while r <= pMap["meta"]["rows"]
+      put 1 into c
+      repeat while c <= pMap["meta"]["cols"]
+         put pMap["slope"][r][c] into tS
+         if tS is empty then
+            add 1 to c
+            next repeat
+         end if
+         put c & comma & r into tWhere
+         put CellMap.Column(pMap, c, r) into tCol
+         if tCol is empty then
+            put cmLine("slope-empty", pId, tWhere, "a slope on an empty cell does nothing") after tOut
+            add 1 to c
+            next repeat
+         end if
+         put min(tS) into tMin
+         if tMin > 0 then
+            put cmLine("slope-all", pId, tWhere, "all four corners lifted: raise the floor by" && tMin && "instead") after tOut
+         end if
+         if item 2 of tCol is not empty then
+            if item 1 of tCol + max(tS) > item 2 of tCol then
+               put cmLine("slope-roof", pId, tWhere, "the slope pokes" && (item 1 of tCol + max(tS) - item 2 of tCol) && "hu through the roof") after tOut
+            end if
+         end if
+         if CellMap.Steep(pMap, c, r) then
+            put 1 into tSide
+            repeat while tSide <= 4
+               put item cmSide(tSide, 3) of tS into a
+               put item cmSide(tSide, 4) of tS into b
+               if a is tMin and b is tMin then
+                  put cmSide(tSide, 1) into dr
+                  put cmSide(tSide, 2) into dc
+                  put cmSide(tSide, 5) into tOpp
+                  put CellMap.Column(pMap, c + dc, r + dr) into tCol2
+                  if tCol2 is not empty then
+                     put item 1 of tCol + tMin into tLow
+                     if cmBlocked(pMap, pTags, c + dc, r + dr) or cmEdgeH(pMap, c + dc, r + dr, tOpp, false) > tLow + tStep then
+                        put cmLine("slope-trap", pId, tWhere, "a steep slope slides into a wall on its" && item tSide of kSideWords && "side") after tOut
+                     else if CellMap.Steep(pMap, c + dc, r + dr) then
+                        put pMap["slope"][r + dr][c + dc] into tS2
+                        if item cmSide(tOpp, 3) of tS2 is min(tS2) and item cmSide(tOpp, 4) of tS2 is min(tS2) then
+                           put cmLine("slope-trap", pId, tWhere, "two steep slopes slide into each other on its" && item tSide of kSideWords && "side") after tOut
+                        end if
+                     end if
+                  end if
+               end if
+               add 1 to tSide
+            end repeat
+         end if
+         add 1 to c
+      end repeat
+      add 1 to r
+   end repeat
+   return tOut
+end cmCheckOne
+
+-- air over a cell's ground (hu), with the decks of the other maps of its place; empty = cannot stand.
+-- pShift[i] = "dc,dr" of map i on its place's grid
+private function cmAir @pPack, @pShift, pMapNo, pCol, pRow
+   local tMap, tCol, tTop, tAir, pc, pr, j, tCol2, tLo, tHi, tG2
+   put pPack["maps"][pMapNo]["map"] into tMap
+   put CellMap.Column(tMap, pCol, pRow) into tCol
+   if tCol is empty then return empty
+   if CellMap.TagInfo(tMap, sCheckTags, tMap["tags"][pRow][pCol], "effect") is "block" then return empty
+   put pPack["maps"][pMapNo]["base"] + item 1 of tCol into tTop
+   if item 2 of tCol is empty then
+      put kNoRoof into tAir
+   else
+      put item 2 of tCol - item 1 of tCol into tAir
+   end if
+   put pCol + item 1 of pShift[pMapNo] into pc
+   put pRow + item 2 of pShift[pMapNo] into pr
+   put 1 into j
+   repeat while j <= pPack["count"]
+      if j is not pMapNo and pShift[j] is not empty then
+         if pPack["maps"][j]["place"] is pPack["maps"][pMapNo]["place"] then
+            put CellMap.Column(pPack["maps"][j]["map"], pc - item 1 of pShift[j], pr - item 2 of pShift[j]) into tCol2
+            if tCol2 is not empty then
+               put item 1 of tCol2 into tG2
+               put pPack["maps"][j]["base"] + min(0, tG2) into tLo
+               put pPack["maps"][j]["base"] + tG2 into tHi
+               if tLo >= tTop then
+                  put min(tAir, tLo - tTop) into tAir
+               else if tHi > tTop then
+                  put 0 into tAir
+               end if
+            end if
+         end if
+      end if
+      add 1 to j
+   end repeat
+   if tAir < CellMap.Opt(tMap, "head") then return empty
+   return tAir
+end cmAir
+
+function CellMap.CheckPack pPack, pTags
+   local tOut, tLine, i, j, tStart, tSeed, r, c, tShift, tFirst, tG, tIds, tSeen, tTodo, tNode, tMap, tId, tSide, h, pc, pr
+   local tBest, tBestH, h2, tAir, tR2, tC2, tOpp, tNext, tTo, tCR, tN, tLeft, tLower, tHas, tCount, tKey, tD, tStep, tA, tB
+   put pTags into sCheckTags
+   repeat for each line tLine in pPack["problems"]
+      if tLine is not empty then put cmLine("pack", empty, empty, tLine) after tOut
+   end repeat
+   -- the loaded maps, their ids, their shift on their place's grid
+   put 1 into i
+   repeat while i <= pPack["count"]
+      if pPack["maps"][i]["map"] is an array then
+         put i into tIds[pPack["maps"][i]["id"]]
+         put pPack["maps"][i]["place"] into tKey
+         if tFirst[tKey] is empty then put i into tFirst[tKey]
+         put tFirst[tKey] into tG
+         put pPack["maps"][i]["at"] into tA
+         put pPack["maps"][tG]["at"] into tB
+         put (item 1 of tA - item 1 of tB) & comma & (item 2 of tA - item 2 of tB) into tShift[i]
+      end if
+      add 1 to i
+   end repeat
+   -- the start
+   put CellMap.PackIndex(pPack, pPack["meta"]["start"]) into tStart
+   if tStart is 0 then
+      put 1 into i
+      repeat while i <= pPack["count"]
+         if tShift[i] is not empty then
+            put i into tStart
+            exit repeat
+         end if
+         add 1 to i
+      end repeat
+   end if
+   if tStart is 0 then
+      put cmLine("start", pPack["meta"]["start"], empty, "no start map") after tOut
+   else if tShift[tStart] is empty then
+      put cmLine("start", pPack["meta"]["start"], empty, "no start map") after tOut
+   else
+      put pPack["maps"][tStart]["map"] into tMap
+      put 1 into r
+      repeat while r <= tMap["meta"]["rows"]
+         put 1 into c
+         repeat while c <= tMap["meta"]["cols"]
+            if tMap["tags"][r][c] is "@" then
+               put tStart & "|" & r & "|" & c into tSeed
+               exit repeat
+            end if
+            add 1 to c
+         end repeat
+         if tSeed is not empty then exit repeat
+         add 1 to r
+      end repeat
+      if tSeed is empty then put cmLine("start", pPack["maps"][tStart]["id"], empty, "the start map has no @ cell") after tOut
+   end if
+   -- each map alone
+   put 1 into i
+   repeat while i <= pPack["count"]
+      if tShift[i] is not empty then put cmCheckOne(pPack["maps"][i]["map"], pTags, pPack["maps"][i]["id"]) after tOut
+      add 1 to i
+   end repeat
+   -- walking from the start
+   set the itemDel to "|"
+   if tSeed is not empty then
+      if cmAir(pPack, tShift, item 1 of tSeed, item 3 of tSeed, item 2 of tSeed) is not empty then
+         put true into tSeen[tSeed]
+         put tSeed & return into tTodo
+      end if
+   end if
+   repeat while tTodo is not empty
+      put line 1 of tTodo into tNode
+      delete line 1 of tTodo
+      put item 1 of tNode into i
+      put item 2 of tNode into r
+      put item 3 of tNode into c
+      put pPack["maps"][i]["map"] into tMap
+      put pPack["maps"][i]["id"] into tId
+      put CellMap.Opt(tMap, "step") into tStep
+      put empty into tNext
+      put 1 into tSide
+      repeat while tSide <= 4
+         put pPack["maps"][i]["base"] + cmEdgeH(tMap, c, r, tSide, true) into h
+         put cmSide(tSide, 5) into tOpp
+         set the itemDel to comma
+         put c + cmSide(tSide, 2) + item 1 of tShift[i] into pc
+         put r + cmSide(tSide, 1) + item 2 of tShift[i] into pr
+         put empty into tBest
+         put 1 into j
+         repeat while j <= pPack["count"]
+            if tShift[j] is not empty then
+               if pPack["maps"][j]["place"] is pPack["maps"][i]["place"] then
+                  put pc - item 1 of tShift[j] into tC2
+                  put pr - item 2 of tShift[j] into tR2
+                  put cmAir(pPack, tShift, j, tC2, tR2) into tAir
+                  if tAir is not empty then
+                     put pPack["maps"][j]["base"] + cmEdgeH(pPack["maps"][j]["map"], tC2, tR2, tOpp, false) into h2
+                     if h2 <= h + tStep then
+                        if tAir >= kOpenSky or h <= h2 + tAir then
+                           if tBest is empty or h2 > tBestH then
+                              put h2 into tBestH
+                              put j & "|" & tR2 & "|" & tC2 into tBest
+                           end if
+                        end if
+                     end if
+                  end if
+               end if
+            end if
+            add 1 to j
+         end repeat
+         if tBest is not empty then put tBest & return after tNext
+         set the itemDel to "|"
+         add 1 to tSide
+      end repeat
+      -- doors and teleport links
+      put 1 into j
+      repeat while j <= CellMap.Count(pPack["doors"])
+         if pPack["doors"][j]["from"] is (tId & ":" & c & comma & r) then
+            set the itemDel to ":"
+            put pPack["doors"][j]["to"] into tTo
+            if the number of items of tTo is 2 and tIds[item 1 of tTo] is not empty then
+               put cmCR(item 2 of tTo) into tCR
+               if tCR is not empty then
+                  put tIds[item 1 of tTo] into tKey
+                  set the itemDel to comma
+                  put tKey & "|" & item 2 of tCR & "|" & item 1 of tCR & return after tNext
+               end if
+            end if
+            set the itemDel to "|"
+         end if
+         add 1 to j
+      end repeat
+      put 1 into j
+      repeat while j <= CellMap.Count(tMap["links"])
+         if tMap["links"][j]["type"] is "teleport" and tMap["links"][j]["from"] is (c & comma & r) then
+            repeat for each word tTo in tMap["links"][j]["to"]
+               if char 1 of tTo is not "@" then
+                  put cmCR(tTo) into tCR
+                  if tCR is not empty then
+                     set the itemDel to comma
+                     put i & "|" & item 2 of tCR & "|" & item 1 of tCR & return after tNext
+                     set the itemDel to "|"
+                  end if
+               end if
+            end repeat
+         end if
+         add 1 to j
+      end repeat
+      repeat for each line tNode in tNext
+         if tSeen[tNode] is true then next repeat
+         if cmAir(pPack, tShift, item 1 of tNode, item 3 of tNode, item 2 of tNode) is empty then next repeat
+         put true into tSeen[tNode]
+         put tNode & return after tTodo
+      end repeat
+   end repeat
+   set the itemDel to comma
+   -- doors onto cells nobody can stand on
+   put 1 into j
+   repeat while j <= CellMap.Count(pPack["doors"])
+      put pPack["doors"][j]["to"] into tTo
+      set the itemDel to ":"
+      put tIds[item 1 of tTo] into i
+      put item 1 of tTo into tId
+      if the number of items of tTo is 2 then
+         put item 2 of tTo into tCR
+      else
+         put empty into tCR
+      end if
+      set the itemDel to comma
+      if i is not empty then
+         if not cmIn(pPack["maps"][i]["map"], cmCR(tCR)) then
+            put cmLine("door", tId, tCR, "a" && pPack["doors"][j]["type"] && "door from" && pPack["doors"][j]["from"] & ": outside the map") after tOut
+         else
+            put cmCR(tCR) into tCR
+            if cmAir(pPack, tShift, i, item 1 of tCR, item 2 of tCR) is empty then
+               put cmLine("door", tId, tCR, "a" && pPack["doors"][j]["type"] && "door from" && pPack["doors"][j]["from"] && "onto a cell nobody can stand on") after tOut
+            end if
+         end if
+      end if
+      add 1 to j
+   end repeat
+   -- holes with nothing under them
+   put 1 into i
+   repeat while i <= pPack["count"]
+      if tShift[i] is not empty then
+         put empty into tLower
+         put 1 into j
+         repeat while j <= pPack["count"]
+            if tShift[j] is not empty and pPack["maps"][j]["place"] is pPack["maps"][i]["place"] then
+               if pPack["maps"][j]["base"] < pPack["maps"][i]["base"] then put j & return after tLower
+            end if
+            add 1 to j
+         end repeat
+         if tLower is not empty then
+            put pPack["maps"][i]["map"] into tMap
+            put 1 into r
+            repeat while r <= tMap["meta"]["rows"]
+               put 1 into c
+               repeat while c <= tMap["meta"]["cols"]
+                  if CellMap.Column(tMap, c, r) is empty then
+                     put false into tHas
+                     put 1 into tSide
+                     repeat while tSide <= 4
+                        if CellMap.Column(tMap, c + cmSide(tSide, 2), r + cmSide(tSide, 1)) is not empty then put true into tHas
+                        add 1 to tSide
+                     end repeat
+                     if tHas then
+                        put c + item 1 of tShift[i] into pc
+                        put r + item 2 of tShift[i] into pr
+                        put false into tHas
+                        repeat for each line j in tLower
+                           if CellMap.Column(pPack["maps"][j]["map"], pc - item 1 of tShift[j], pr - item 2 of tShift[j]) is not empty then put true into tHas
+                        end repeat
+                        if not tHas then put cmLine("hole", pPack["maps"][i]["id"], c & comma & r, "a hole with nothing under it") after tOut
+                     end if
+                  end if
+                  add 1 to c
+               end repeat
+               add 1 to r
+            end repeat
+         end if
+      end if
+      add 1 to i
+   end repeat
+   if tSeed is empty then return tOut
+   -- a step too high, where it cuts an area off
+   put 1 into i
+   repeat while i <= pPack["count"]
+      if tShift[i] is not empty then
+         put pPack["maps"][i]["map"] into tMap
+         put CellMap.Opt(tMap, "step") into tStep
+         put 1 into r
+         repeat while r <= tMap["meta"]["rows"]
+            put 1 into c
+            repeat while c <= tMap["meta"]["cols"]
+               if tSeen[i & "|" & r & "|" & c] is not true then
+                  if cmAir(pPack, tShift, i, c, r) is not empty then
+                     put 1 into tSide
+                     repeat while tSide <= 4
+                        put r + cmSide(tSide, 1) into tR2
+                        put c + cmSide(tSide, 2) into tC2
+                        if tSeen[i & "|" & tR2 & "|" & tC2] is true then
+                           put CellMap.Column(tMap, c, r) into tA
+                           put CellMap.Column(tMap, tC2, tR2) into tB
+                           put item 1 of tA - item 1 of tB into tD
+                           if tD > tStep and tD <= 2 * tStep then
+                              put cmLine("step", pPack["maps"][i]["id"], c & comma & r, "a step of" && tD && "hu (step is" && tStep & ") cuts this off") after tOut
+                              exit repeat
+                           end if
+                        end if
+                        add 1 to tSide
+                     end repeat
+                  end if
+               end if
+               add 1 to c
+            end repeat
+            add 1 to r
+         end repeat
+      end if
+      add 1 to i
+   end repeat
+   -- the areas nobody can walk to, one line each
+   put 1 into i
+   repeat while i <= pPack["count"]
+      if tShift[i] is not empty then
+         put pPack["maps"][i]["map"] into tMap
+         put empty into tLeft
+         put 1 into r
+         repeat while r <= tMap["meta"]["rows"]
+            put 1 into c
+            repeat while c <= tMap["meta"]["cols"]
+               if tSeen[i & "|" & r & "|" & c] is not true then
+                  if cmAir(pPack, tShift, i, c, r) is not empty then put true into tLeft[r & comma & c]
+               end if
+               add 1 to c
+            end repeat
+            add 1 to r
+         end repeat
+         put 1 into r
+         repeat while r <= tMap["meta"]["rows"]
+            put 1 into c
+            repeat while c <= tMap["meta"]["cols"]
+               if tLeft[r & comma & c] is true then
+                  put 0 into tCount
+                  delete variable tLeft[r & comma & c]
+                  put r & comma & c & return into tTodo
+                  repeat while tTodo is not empty
+                     put line 1 of tTodo into tNode
+                     delete line 1 of tTodo
+                     add 1 to tCount
+                     put 1 into tSide
+                     repeat while tSide <= 4
+                        put (item 1 of tNode + cmSide(tSide, 1)) & comma & (item 2 of tNode + cmSide(tSide, 2)) into tKey
+                        if tLeft[tKey] is true then
+                           delete variable tLeft[tKey]
+                           put tKey & return after tTodo
+                        end if
+                        add 1 to tSide
+                     end repeat
+                  end repeat
+                  if tCount is 1 then
+                     put cmLine("unreachable", pPack["maps"][i]["id"], c & comma & r, "1 cell nobody can walk to from the start") after tOut
+                  else
+                     put cmLine("unreachable", pPack["maps"][i]["id"], c & comma & r, tCount && "cells nobody can walk to from the start") after tOut
+                  end if
+               end if
+               add 1 to c
+            end repeat
+            add 1 to r
+         end repeat
+      end if
+      add 1 to i
+   end repeat
+   return tOut
+end CellMap.CheckPack

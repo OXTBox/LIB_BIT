@@ -22,8 +22,9 @@ Version 2 (CELLMAP_V2.md): floor, ceiling, red, green, blue 0-255 a cell in heig
 hallway), links, objects, stacked maps; levels(), stand_at(), walk(), level_segments(), level_boxes().
 Version 3 (CELLMAP_V3.md): slopes (a [slope] section: four corner rises a cell) and map packs
 (a .cellpack file naming a level's maps: stacked in one place, or joined by doors):
-slope(), rise_at(), steep(), read_pack(), pack_stand_at(), pack_walk(), pack_doors(), pack_enter().
+slope(), rise_at(), steep(), read_pack(), pack_stand_at(), pack_walk(), pack_doors(), pack_enter(), pack_segments(); level_segments() draws slopes.
 """
+import copy
 import colorsys, json, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -869,6 +870,276 @@ def pack_enter(pack, tags, font, where):
     return e['place'], x + e['ox'], z + e['oz'], (p['levels'][0][0] + e['base']) * hu(m)
 
 
+# ------------------------------------------------------------------ the checker (E12, CELLMAP_V3.md 2 and 6)
+# One problem a line: kind TAB map id TAB col,row TAB plain words, in a fixed order (the checks in
+# the order below, maps in the pack's order, cells row by row). The same lines in xTalk (CellMap.Check).
+# Kinds: pack, start, link, slope-empty, slope-all, slope-roof, slope-trap, door, hole, step, unreachable.
+# Reachability is the walker's rules cell by cell, on the ground of each cell (not a tower's roof top):
+# up no more than `step`, at least `head` of air, a drop only through air, never up a steep slope;
+# stacked maps of one place together; doors and teleport links join cells; locked doors open.
+
+SIDES = ((-1, 0, 0, 1, 2), (0, 1, 1, 2, 3), (1, 0, 2, 3, 0), (0, -1, 3, 0, 1))    # dr, dc, this edge's corners, the side opposite
+SIDE_WORDS = ('north', 'east', 'south', 'west')
+
+
+def _edge_h(m, r, c, side, leaving):
+    """hu (in the map) of a cell's ground at one edge: leaving = the highest point of the edge
+    (none of a steep cell: it slides to its lowest), else the lowest point of the edge"""
+    g = column(m, r, c)[0]
+    s = slope(m, r, c)
+    if not s:
+        return g
+    a, b = s[SIDES[side][2]], s[SIDES[side][3]]
+    if leaving and steep(m, r, c):
+        return g + min(s)
+    return g + (max(a, b) if leaving else min(a, b))
+
+
+def _cr(text):
+    """'col,row' (decimals cut) as two whole numbers, or None"""
+    f = text.split(',')
+    if len(f) != 2:
+        return None
+    try:
+        return int(float(f[0])), int(float(f[1]))
+    except ValueError:
+        return None
+
+
+def _blocked(m, tags, r, c):
+    return tag_info(m, tags, m['tags'][r][c], 'effect') == 'block'
+
+
+def _check_one(m, tags, mid, out):
+    rows, cols = m['meta']['rows'], m['meta']['cols']
+    step = opt(m, 'step')
+
+    def inside(c, r):
+        return 1 <= c <= cols and 1 <= r <= rows
+
+    at = _cr
+    objs = [o['id'] for o in m.get('objects', [])]
+    for k in m.get('links', []):
+        a = at(k['from'])
+        if a is None or not inside(*a):
+            out.append(('link', mid, k['from'], 'a %s link from outside the map' % (k['type'] or 'plain')))
+            continue
+        tos = k['to'].split()
+        if not tos:
+            out.append(('link', mid, k['from'], 'a %s link with no target' % (k['type'] or 'plain')))
+        for to in tos:
+            if to.startswith('@'):
+                if to[1:] not in objs:
+                    out.append(('link', mid, k['from'], 'a %s link to %s: no such object' % (k['type'] or 'plain', to)))
+            else:
+                b = at(to)
+                if b is None or not inside(*b):
+                    out.append(('link', mid, k['from'], 'a %s link to %s: outside the map' % (k['type'] or 'plain', to)))
+    for r in range(rows):
+        for c in range(cols):
+            s = slope(m, r, c)
+            if not s:
+                continue
+            where = '%d,%d' % (c + 1, r + 1)
+            col = column(m, r, c)
+            if col is None:
+                out.append(('slope-empty', mid, where, 'a slope on an empty cell does nothing'))
+                continue
+            if min(s) > 0:
+                out.append(('slope-all', mid, where, 'all four corners lifted: raise the floor by %d instead' % min(s)))
+            if col[1] is not None and col[0] + max(s) > col[1]:
+                out.append(('slope-roof', mid, where, 'the slope pokes %d hu through the roof' % (col[0] + max(s) - col[1])))
+            if not steep(m, r, c):
+                continue
+            for side, (dr, dc, i, j, opp) in enumerate(SIDES):
+                if not (s[i] == min(s) and s[j] == min(s)):
+                    continue                                # not a low edge
+                r2, c2 = r + dr, c + dc
+                col2 = column(m, r2, c2)
+                if col2 is None:
+                    continue                                # a drop: not a trap
+                low = col[0] + min(s)
+                if _blocked(m, tags, r2, c2) or _edge_h(m, r2, c2, opp, False) > low + step:
+                    out.append(('slope-trap', mid, where, 'a steep slope slides into a wall on its %s side' % SIDE_WORDS[side]))
+                elif steep(m, r2, c2):
+                    s2 = slope(m, r2, c2)
+                    if s2[SIDES[opp][2]] == min(s2) and s2[SIDES[opp][3]] == min(s2):
+                        out.append(('slope-trap', mid, where, 'two steep slopes slide into each other on its %s side' % SIDE_WORDS[side]))
+
+
+def check_pack(pack, tags=None):
+    """the E12 checker over a pack (or a map: check()): a list of (kind, map id, 'col,row', words)"""
+    tags = tag_lookup(tags)
+    out = [('pack', '', '', p) for p in pack['problems']]
+    es = [e for e in pack['maps'] if e['map'] is not None]
+    start = pack_map(pack, pack['meta'].get('start', '')) or (es[0] if es else None)
+    seed = None
+    if start is None or start['map'] is None:
+        out.append(('start', pack['meta'].get('start', ''), '', 'no start map'))
+    else:
+        spots = [(r, c) for r, row in enumerate(start['map']['tags']) for c, t in enumerate(row) if t == '@']
+        if not spots:
+            out.append(('start', start['id'], '', 'the start map has no @ cell'))
+        else:
+            seed = (start['id'],) + spots[0]
+    for e in es:
+        _check_one(e['map'], tags, e['id'], out)
+    # place positions: a map's cell c (0-based) is column c + shift of its place's first map
+    first = {}
+    shift = {}
+    for e in es:
+        g = first.setdefault(e['place'], e)
+        ac, ar = (int(v) for v in e['at'].split(','))
+        gc, gr = (int(v) for v in g['at'].split(','))
+        shift[e['id']] = (ac - gc, ar - gr)
+    byid = {e['id']: e for e in es}
+
+    def cell_of(e, pc, pr):                                 # place position -> this map's 0-based r, c
+        return pr - shift[e['id']][1], pc - shift[e['id']][0]
+
+    def node_air(e, r, c):
+        """air over the cell's ground (hu), with the decks of the other maps of its place; None = cannot stand"""
+        m = e['map']
+        col = column(m, r, c)
+        if col is None or _blocked(m, tags, r, c):
+            return None
+        top = e['base'] + col[0]
+        air = (col[1] - col[0]) if col[1] is not None else NO_ROOF
+        pc, pr = c + shift[e['id']][0], r + shift[e['id']][1]
+        for e2 in es:
+            if e2 is e or e2['place'] != e['place']:
+                continue
+            r2, c2 = cell_of(e2, pc, pr)
+            col2 = column(e2['map'], r2, c2)
+            if col2 is None:
+                continue
+            lo, hi = e2['base'] + min(0, col2[0]), e2['base'] + col2[0]
+            if lo >= top:
+                air = min(air, lo - top)
+            elif hi > top:
+                air = 0
+        return air if air >= opt(m, 'head') else None
+    seen = set()
+    if seed is not None and node_air(byid[seed[0]], seed[1], seed[2]) is not None:
+        todo = [seed]
+        seen.add(seed)
+        while todo:
+            mid, r, c = todo.pop()
+            e = byid[mid]
+            m = e['map']
+            nxt = []
+            for side, (dr, dc, i, j, opp) in enumerate(SIDES):
+                h = e['base'] + _edge_h(m, r, c, side, True)
+                pc, pr = c + dc + shift[mid][0], r + dr + shift[mid][1]
+                best = None
+                for e2 in es:
+                    if e2['place'] != e['place']:
+                        continue
+                    r2, c2 = cell_of(e2, pc, pr)
+                    air = node_air(e2, r2, c2) if 0 <= r2 < e2['map']['meta']['rows'] and 0 <= c2 < e2['map']['meta']['cols'] else None
+                    if air is None:
+                        continue
+                    h2 = e2['base'] + _edge_h(e2['map'], r2, c2, opp, False)
+                    if h2 <= h + opt(m, 'step') and (air >= OPEN_SKY or h <= h2 + air) and (best is None or h2 > best[0]):
+                        best = (h2, (e2['id'], r2, c2))
+                if best is not None:
+                    nxt.append(best[1])
+            for d in pack['doors']:
+                if d['from'] == '%s:%d,%d' % (mid, c + 1, r + 1):
+                    to = d['to'].split(':')
+                    if to[0] in byid and len(to) == 2 and _cr(to[1]):
+                        f = _cr(to[1])
+                        nxt.append((to[0], f[1] - 1, f[0] - 1))
+            for k in m.get('links', []):
+                if k['type'] == 'teleport' and k['from'] == '%d,%d' % (c + 1, r + 1):
+                    for to in k['to'].split():
+                        f = _cr(to)
+                        if f and not to.startswith('@'):
+                            nxt.append((mid, f[1] - 1, f[0] - 1))
+            for n in nxt:
+                e2 = byid[n[0]]
+                if n not in seen and 0 <= n[1] < e2['map']['meta']['rows'] and 0 <= n[2] < e2['map']['meta']['cols'] \
+                        and node_air(e2, n[1], n[2]) is not None:
+                    seen.add(n)
+                    todo.append(n)
+    for d in pack['doors']:
+        to = d['to'].split(':')
+        if to[0] not in byid:
+            continue                                        # the reader already says so
+        f = _cr(to[1]) if len(to) == 2 else None
+        e2 = byid[to[0]]
+        ok = f is not None
+        if ok:
+            r2, c2 = f[1] - 1, f[0] - 1
+            ok = 0 <= r2 < e2['map']['meta']['rows'] and 0 <= c2 < e2['map']['meta']['cols']
+        if not ok:
+            out.append(('door', to[0], to[1] if len(to) == 2 else '', 'a %s door from %s: outside the map' % (d['type'], d['from'])))
+        elif node_air(e2, r2, c2) is None:
+            out.append(('door', to[0], to[1], 'a %s door from %s onto a cell nobody can stand on' % (d['type'], d['from'])))
+    for e in es:
+        lower = [e2 for e2 in es if e2['place'] == e['place'] and e2['base'] < e['base']]
+        if not lower:
+            continue
+        m = e['map']
+        for r in range(m['meta']['rows']):
+            for c in range(m['meta']['cols']):
+                if column(m, r, c) is not None:
+                    continue
+                if not any(column(m, r + dr, c + dc) is not None for dr, dc, i, j, o in SIDES):
+                    continue                                # not beside the deck
+                pc, pr = c + shift[e['id']][0], r + shift[e['id']][1]
+                if not any(column(e2['map'], *cell_of(e2, pc, pr)) is not None for e2 in lower):
+                    out.append(('hole', e['id'], '%d,%d' % (c + 1, r + 1), 'a hole with nothing under it'))
+    if seed is not None:                                # a step too high, where it cuts an area off
+        for e in es:
+            m = e['map']
+            for r in range(m['meta']['rows']):
+                for c in range(m['meta']['cols']):
+                    if (e['id'], r, c) in seen or node_air(e, r, c) is None:
+                        continue
+                    for dr, dc, i, j, o in SIDES:
+                        if (e['id'], r + dr, c + dc) not in seen:
+                            continue
+                        d = column(m, r, c)[0] - column(m, r + dr, c + dc)[0]
+                        if opt(m, 'step') < d <= 2 * opt(m, 'step'):
+                            out.append(('step', e['id'], '%d,%d' % (c + 1, r + 1),
+                                        'a step of %d hu (step is %d) cuts this off' % (d, opt(m, 'step'))))
+                            break
+    if seed is not None:
+        for e in es:
+            m = e['map']
+            left = set((r, c) for r in range(m['meta']['rows']) for c in range(m['meta']['cols'])
+                       if (e['id'], r, c) not in seen and node_air(e, r, c) is not None)
+            for r in range(m['meta']['rows']):
+                for c in range(m['meta']['cols']):
+                    if (r, c) not in left:
+                        continue
+                    n, todo = 0, [(r, c)]
+                    left.discard((r, c))
+                    while todo:
+                        a, b = todo.pop()
+                        n += 1
+                        for dr, dc, i, j, o in SIDES:
+                            if (a + dr, b + dc) in left:
+                                left.discard((a + dr, b + dc))
+                                todo.append((a + dr, b + dc))
+                    out.append(('unreachable', e['id'], '%d,%d' % (c + 1, r + 1),
+                                '%d cell%s nobody can walk to from the start' % (n, '' if n == 1 else 's')))
+    return out
+
+
+def check(m, tags=None):
+    """the E12 checker over one map: a list of (kind, map id, 'col,row', words)"""
+    mid = m['meta'].get('name', 'map')
+    pack = dict(meta=dict(name=mid, start=mid), maps=[dict(id=mid, file='', place='main', base=0, at='1,1',
+                map=upgrade(copy.deepcopy(m)), ox=0.0, oz=0.0)], doors=[], problems=[])
+    return check_pack(pack, tags)
+
+
+def check_text(problems):
+    return ''.join('\t'.join(p) + '\n' for p in problems)
+
+
 # ------------------------------------------------------------------ version 2: the level as line segments
 def glyph_edges(rows16):
     """the outline of a glyph's lit bits as merged runs: [(x1, z1, x2, z2)] in pixels 0-16"""
@@ -933,6 +1204,14 @@ def level_segments(m, tags=None, font=None):
             return 'green'
         return 'wall'
 
+    def corners(r, c):                      # the ground's four corner heights: nw, ne, se, sw (CELLMAP_V3.md 2)
+        g = C[r][c][0]
+        s = slope(m, r, c) if (r, c) not in shape else None
+        return [g + x for x in s] if s else [g, g, g, g]
+
+    # each side's two corner heights, in the order the side runs (west to east, north to south)
+    side_corners = {'n': (0, 1), 'e': (1, 2), 's': (3, 2), 'w': (0, 3)}
+    facing = {'n': 's', 'e': 'w', 's': 'n', 'w': 'e'}
     sides = (('n', -1, 0), ('e', 0, 1), ('s', 1, 0), ('w', 0, -1))
     for r in range(rows):
         for c in range(cols):
@@ -941,9 +1220,21 @@ def level_segments(m, tags=None, font=None):
                 continue
             ground, rb, rt, sb, st = col
             water = is_water(m, tags, r, c)
+            k4 = corners(r, c)
             for side, dr, dc in sides:
                 n = col_at(r + dr, c + dc)
-                edge('floor' if n is not None and n[0] == ground else base_class(r, c), ground, r, c, side)
+                a, b = (k4[i] for i in side_corners[side])
+                same = False
+                if n is not None:
+                    n4 = corners(r + dr, c + dc)
+                    same = (a, b) == tuple(n4[i] for i in side_corners[facing[side]])
+                cls = 'floor' if same else base_class(r, c)
+                if a == b:
+                    edge(cls, a, r, c, side)
+                else:                       # a sloped ground edge runs corner to corner
+                    x1, z1 = c * 16 + (16 if side == 'e' else 0), r * 16 + (16 if side == 's' else 0)
+                    x2, z2 = (x1 + 16, z1) if side in 'ns' else (x1, z1 + 16)
+                    ups.add('%d,%d,%d,%d,%d,%d,%s' % (x1, a, z1, x2, b, z2, cls))
                 if rb is not None:
                     edge('ceiling', rb, r, c, side)
                     if rt != rb:
@@ -956,6 +1247,12 @@ def level_segments(m, tags=None, font=None):
                     nr, nc = r + dr, c + dc
                     if not (n is not None and is_water(m, tags, nr, nc) and m['floor'][nr][nc] == f):
                         edge('water', f, r, c, side)
+            if k4[0] + k4[2] != k4[1] + k4[3]:   # a twisted cell: its diagonal, through the highest corner
+                hi = k4.index(max(k4))
+                if hi in (0, 2):
+                    ups.add('%d,%d,%d,%d,%d,%d,floor' % (c * 16, k4[0], r * 16, c * 16 + 16, k4[2], r * 16 + 16))
+                else:
+                    ups.add('%d,%d,%d,%d,%d,%d,floor' % (c * 16, k4[3], r * 16 + 16, c * 16 + 16, k4[1], r * 16))
             if water:
                 f = m['floor'][r][c]
                 ups.add('%d,%d,%d,%d,%d,%d,water' % (c * 16, f, r * 16, c * 16 + 16, f, r * 16 + 16))
@@ -982,7 +1279,7 @@ def level_segments(m, tags=None, font=None):
             around = [col_at(r, c) for r, c in cells]
             if all(a is None for a in around):
                 continue
-            gs = [a[0] if a is not None else 0 for a in around]
+            gs = [corners(r, c)[k] if a is not None else 0 for (r, c), a, k in zip(cells, around, (2, 3, 1, 0))]
             lo, hi = min(gs), max(gs)
             if hi - lo > 1:
                 live = [(r, c) for (r, c), a in zip(cells, around) if a is not None]
@@ -1027,6 +1324,23 @@ def seg_to_engine(m, seg):
     def Z(v): return (int(v) / 16 - m['meta']['rows'] / 2) * cell
     def Y(v): return (int(v) + opt(m, 'base')) * k
     return X(f[0]), Y(f[1]), Z(f[2]), X(f[3]), Y(f[4]), Z(f[5]), f[6]
+
+
+def pack_segments(pack, place, tags=None, font=None):
+    """every map of one place drawn together: level_segments of each, moved by its ox, oz and the
+    pack's base (CELLMAP_V3.md 3, 4). Engine units, y up: (x1, y1, z1, x2, y2, z2, class, map id),
+    in the pack's order, each map's lines sorted"""
+    out = []
+    for e in pack_place(pack, place):
+        m = e['map']
+        cell, k = m['meta']['cell'], hu(m)
+        hc, hr = m['meta']['cols'] / 2, m['meta']['rows'] / 2
+        for seg in level_segments(m, tags, font):
+            f = seg.split(',')
+            out.append(((int(f[0]) / 16 - hc) * cell + e['ox'], (int(f[1]) + e['base']) * k, (int(f[2]) / 16 - hr) * cell + e['oz'],
+                        (int(f[3]) / 16 - hc) * cell + e['ox'], (int(f[4]) + e['base']) * k, (int(f[5]) / 16 - hr) * cell + e['oz'],
+                        f[6], e['id']))
+    return out
 
 
 def level_boxes(m, tags=None):

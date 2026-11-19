@@ -103,6 +103,28 @@ x, z, y, r = go(x, z, y, -4, 0, 42, 'west')
 x, z, y, r = go(x, z, y, 0, 4, 60, 'south into the stair hole')
 check('through the hole: back in the cellar, on the top stair', (r[3], r[4], r[5], r[6], round(y / k, 2)), ('climb', 'cellar', 6, 6, 120.0))
 open(os.path.join(HERE, '_py_v3_walk.txt'), 'w', newline='\n').write('\n'.join(log) + '\n')
+
+# drawing slopes and packs (A-92 1)
+segs = cm.level_segments(loft, tags)
+check('the ramp is drawn: its north edge rises from 1 to 61, a wall against the room above',
+      '80,1,16,96,61,16,wall' in segs)
+check('between the two ramp cells the edge is floor', '80,1,32,96,61,32,floor' in segs)
+check('the ramp meets the dais (61) flat: a floor line at 61', '96,61,16,96,61,48,floor' in segs)
+check('no flat line at the ramp\'s low side any more', '80,1,16,96,1,16,floor' in segs or '80,1,16,96,1,16,wall' in segs, False)
+tw = cm.read_map(os.path.join(two, 'two_rooms_loft.cellmap'))
+cm.set_slope(tw, 3, 3, [0, 0, 0, 30])
+twsegs = cm.level_segments(tw, tags)
+check('a twisted cell gets its diagonal through the highest corner', '48,31,64,64,1,48,floor' in twsegs)
+check('a version 2 map draws as before (no slope, same lines)',
+      len(cm.level_segments(cm.read_map(os.path.join(two, 'two_rooms_cellar.cellmap')), tags)) > 0)
+ps = cm.pack_segments(pack, 'main', tags)
+nc, nl = len(cm.level_segments(pack['maps'][0]['map'], tags)), len(segs)
+check('pack_segments: the cellar\'s lines then the loft\'s', (len(ps), ps[0][7], ps[-1][7]), (nc + nl, 'cellar', 'loft'))
+check('the loft is drawn 120 hu up: its ramp runs from 121 to 181',
+      any(p[7] == 'loft' and round(p[1] / k) == 121 and round(p[4] / k) == 181 for p in ps))
+fmt = lambda p: ','.join('%.2f' % v for v in p[:6]) + ',' + p[6] + ',' + p[7]
+open(os.path.join(HERE, '_py_v3_segments.txt'), 'w', newline='\n').write(
+    '\n'.join(segs) + '\n--\n' + '\n'.join(twsegs) + '\n--\n' + '\n'.join(fmt(p) for p in ps) + '\n')
 print('\n'.join(log))
 print('ALL OK' if ok else 'SOMETHING FAILED')
 sys.exit(0 if ok else 1)

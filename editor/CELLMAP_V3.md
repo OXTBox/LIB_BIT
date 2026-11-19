@@ -62,12 +62,11 @@ the checker (E12, to build) warns, with the cell, about:
 3. a slope on an empty cell (floor 0: it does nothing);
 4. a rise that pokes through the cell's own roof.
 
-### LevelSegments (decided, not built: section 8)
+### LevelSegments (built 17 Nov: section 8)
 A sloped cell's four ground edges run corner to corner at their own heights. An edge is class
 `floor` when the neighbour's matching edge has the same two heights, otherwise the wall class.
 The upright at each grid corner runs from the lowest to the highest corner height meeting there.
-A twisted cell gets its diagonal. Until this is built a sloped cell is DRAWN flat at its low side
-(it already WALKS as a slope).
+A twisted cell gets its diagonal (drawn as class `floor`).
 
 ## 3. Stacked maps: a room above a room
 
@@ -204,7 +203,7 @@ tests give the same numbers as before (segments, walks and picks, both engines).
 | Doors written in each map's `[links]` | Only the pack knows the other maps' names; a map would stop working alone. |
 | Full or `..` paths in a pack | An installed game must find everything inside its own folder. |
 
-## 8. Status (2026-11-16)
+## 8. Status (2026-11-16, drawing and E13 added 2026-11-17)
 
 | Part | State |
 |---|---|
@@ -213,15 +212,17 @@ tests give the same numbers as before (segments, walks and picks, both engines).
 | `.cellpack` read and written, problems list, a `.cellmap` as a pack of one | done, tested both sides |
 | Stacked maps in the walker (`PackStandAt`, `PackWalk`), doors (`PackDoors`, `PackEnter`) | done, tested: a 12-leg walk up the stairs, up the ramp, off the dais and back down the hole gives the same line for line in Python and xTalk |
 | Example `maps/two_rooms/` (cellar, loft, pack) | done, hand-made |
-| Tests | `tests/py_v3_test.py` (30 checks), `tests/lc_v3_test.txt` (25 checks; passes on both headless engines) |
-| Slopes and packs in `LevelSegments` / `LevelBoxes` (drawing) | decided (sections 2, 3), NOT built: a slope is drawn flat, a pack is not drawn as one |
+| Tests | `tests/py_v3_test.py` (38 checks), `tests/lc_v3_test.txt` (28 checks; passes on both headless engines) |
+| Slopes in `LevelSegments` (drawing) | done 17 Nov (Opus): sloped edges run corner to corner, `floor` when the neighbour's edge matches, uprights from the corner heights, a twisted cell's diagonal; same lines in Python and xTalk (`tests/_py_v3_segments.txt`) |
+| `CellMap.PackSegments` / `pack_segments` (a place drawn as one) | done 17 Nov: each map's segments moved by `ox`, `oz` and the pack's base, engine units, the map id as an 8th item |
+| Slopes and packs in `LevelBoxes` (the solid look) | not built: a slope is still a flat box |
 | `Pick` (painting in 3D) on slopes and packs | not built: it sees the flat cell of one map |
-| The checker (E12) | not built |
+| The checker (E12) | done 18 Nov (Opus): `CellMap.Check` / `CheckPack`, `check()` / `check_pack()`: one line a problem (kind, map, col,row, words): slope-trap, slope-all, slope-empty, slope-roof, step (only where it cuts an area off), hole, door, link, start, unreachable (one line an area), and the pack reader's problems. Reachability is the walker's rules cell by cell (ground only, not tower tops). Same lines in Python and xTalk on every map in `maps/` (`tests/py_check_test.py` 22 checks, `tests/lc_check_test.txt` 26, both headless engines). Real findings: Amazing Couple 1-3 have 36 cells behind the gate at 10,10 that no link opens; the cropped wizard pool keeps two links that point off the crop; the 12 mazes have no @ |
 | BitEditor: slope tool, pack panel | not built (section 6) |
-| A game using a pack | none yet; `E13_WalkTheMap` is the natural first |
+| A game using a pack | `E13_WalkTheMap` (LIB_EDITOR, branch cellmap-v3-followups): M cycles to `two_rooms`, drawn with PackSegments, walked with PackWalk, E climbs the ladder (PackDoors) |
 | Speed of `PackWalk` in a real game | not measured (it asks each map of the place at up to nine points a step) |
 | `LIB_EDITOR/tests/e13_test.sh` against this library | not run here (it starts the windowed standalone) |
 
-For Opus, in order: (1) segments for slopes, then `CellMap.PackSegments` = each map's segments
-moved by its `ox`, `oz` and base; (2) E13 walking `maps/two_rooms`; (3) the BitEditor's Slope tool;
-(4) the pack panel; (5) the checker.
+For Opus, in order: ~~(1) segments for slopes, then `CellMap.PackSegments`; (2) E13 walking
+`maps/two_rooms`~~ (17 Nov); (3) the BitEditor's Slope tool; (4) the pack panel; ~~(5) the checker~~
+(18 Nov; the BitEditor still needs its list: click a line, jump to the cell).
