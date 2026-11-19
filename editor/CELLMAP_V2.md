@@ -112,6 +112,11 @@ hold both (green under blue). The grey ceiling is a thin roof at `ceiling` hu.
   `sky`; a green pillar's sides class `green`), xt3d boxes and the checker all read the column.
 - The sample `wizard_pool` now builds its tower this way: walls green 200 From Floor (455),
   rooms and the door roofed From Ceiling under `top 455`; the clouds are green 10 (top 265).
+- **A moving ceiling (doors now; later maybe transforming maps, elevators).** A From Ceiling cell
+  whose ceiling is brought down to its ground has no air left: it is solid from the map's top to the
+  floor. Raising the ceiling opens it again. LIB_EDITOR's E06 Rising Door and E07 Pad Opens Door work
+  this way (ceiling 1 = shut, 100 = open, `top 101` in `cards_yard`). The owner (19 Nov 2026): this
+  may matter for maps that change shape, and might serve for elevators; not designed yet.
 - Maps with green or blue made before 18 Nov change their look (green no longer stands on the
   grey). Only test maps had any; `16x16_Cropped_wizard_pool` is one.
 - Tests: `tests/py_fill_test.py`, `tests/lc_fill_test.txt` (same columns, lines and walks in both
