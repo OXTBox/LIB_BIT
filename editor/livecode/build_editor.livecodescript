@@ -197,7 +197,7 @@ command Build.Editor pDir
    set the lockText of it to true
    -- one look for everything (fields, buttons, menus by the menu rule), then templates reset
    Theme.ApplyStack tS
-   repeat for each item tItems in "FilterLabel,PaintInfo,HHint,ViewTitle"
+   repeat for each item tItems in "FilterLabel,PaintInfo,ViewTitle"
       set the opaque of field tItems of stack tS to false
       set the showBorder of field tItems of stack tS to false
    end repeat
@@ -233,35 +233,61 @@ command Build.HeightTools
       create button ("Tool" & tName) in group "HeightTools"
       set the label of it to tName
       set the autoHilite of it to false
-      set the rect of it to x, 98, x + 66, 118
+      if tName is "Ceiling" then
+         set the rect of it to x, 98, x + 56, 118
+         add 60 to x
+      else
+         set the rect of it to x, 98, x + 48, 118
+         add 52 to x
+      end if
       set the script of it to "on mouseUp" & return & "Ed.HTool " & quote & toLower(tName) & quote & return & "end mouseUp"
-      add 70 to x
    end repeat
-   set the tooltip of button "ToolFloor" to "Greys paint the floor; glyphs show the floor colour"
-   set the tooltip of button "ToolCeiling" to "Greys paint the ceiling; glyphs show the ceiling colour"
+   set the tooltip of button "ToolFloor" to "Greys paint the floor; glyphs show the floor colour on the ceiling colour"
+   set the tooltip of button "ToolCeiling" to "Greys paint the ceiling; glyphs show the ceiling colour on the floor colour"
    set the tooltip of button "ToolBlocks" to "Show squares instead of glyphs (the same two colours)"
-   -- From Floor / From Ceiling (the owner, 18 Nov 2026): a blue block floats, stands on a pillar
-   -- down to its floor, reaches up to the map's top, or both (saved with the map; CELLMAP_V2.md 3b)
+   -- From Floor / From Ceiling (the owner, 18 Nov 2026): painted cell by cell like a height. A click
+   -- on a box makes the two boxes the brush; a click on a cell gives it what the boxes say
+   -- (CELLMAP_V2.md 3b; the cell's [from] value: 1 From Floor + 2 From Ceiling)
    set the backgroundColor of the templateButton to Theme.Get("panel")
    set the foregroundColor of the templateButton to Theme.Get("text")
    set the style of the templateButton to "checkbox"
-   put 508 into x
+   put 462 into x
    repeat for each item tName in "Floor,Ceiling"
       create button ("HFrom" & tName) in group "HeightTools"
       set the label of it to "From" && tName
       set the autoHilite of it to false
-      set the rect of it to x, 98, x + 94, 118
+      if tName is "Ceiling" then
+         set the rect of it to x, 98, x + 92, 118
+      else
+         set the rect of it to x, 98, x + 84, 118
+      end if
       set the script of it to "on mouseUp" & return & "Ed.HFrom " & quote & toLower(tName) & quote & return & "end mouseUp"
-      add 96 to x
+      add 86 to x
    end repeat
    reset the templateButton
-   set the tooltip of button "HFromFloor" to "Blue blocks stand on a solid pillar down to their floor (off: they float)"
-   set the tooltip of button "HFromCeiling" to "Blue blocks reach up to the top of the map (off: they are a thin slab)"
-   create field "HHint" in group "HeightTools"
-   set the rect of it to 700, 99, 772, 118
+   set the tooltip of button "HFromFloor" to "Paint it on cells: From Floor fills the cell solid under its block"
+   set the tooltip of button "HFromCeiling" to "Paint it on cells: the block hangs from the top of the map (a roof too)"
+   -- the map's top (where From Ceiling hangs from): shown, a click changes it
+   set the backgroundColor of the templateField to Theme.Get("panel")
+   set the foregroundColor of the templateField to Theme.Get("text")
+   create field "HTop" in group "HeightTools"
+   reset the templateField
+   set the rect of it to 642, 99, 692, 118
    set the lockText of it to true
    set the textSize of it to 10
    set the dontWrap of it to true
+   set the tooltip of it to "The top of the map in hu: From Ceiling hangs from here. Click to change it"
+   set the script of it to "on mouseUp" & return & "Ed.HTopAsk" & return & "end mouseUp"
+   -- Extrude Glyphs to Heights: a second step, off while you paint heights (the owner, 18 Nov 2026)
+   set the backgroundColor of the templateButton to Theme.Get("panel")
+   set the foregroundColor of the templateButton to Theme.Get("text")
+   create button "HExtrude" in group "HeightTools"
+   reset the templateButton
+   set the label of it to "Extrude Glyphs"
+   set the autoHilite of it to false
+   set the rect of it to 694, 98, 772, 118
+   set the tooltip of it to "Extrude Glyphs to Heights: a raised cell lifts its glyph's shape, not the whole cell (Mesh menu too; saved with the map)"
+   set the script of it to "on mouseUp" & return & "Ed.HExtrude" & return & "end mouseUp"
    put "0,1" into tValues
    put 10 into v
    repeat while v <= 250
@@ -300,7 +326,13 @@ command Build.HeightTools
          set the rect of it to x, y, x + 17, y + 15
          set the backgroundColor of it to tColour
          set the uThemeSkip of it to true
-         set the tooltip of it to tRow && v
+         if tRow is "green" and v > 0 then
+            set the tooltip of it to "green" && v & ": a block whose top is" && 255 + v && "hu"
+         else if tRow is "blue" and v > 0 then
+            set the tooltip of it to "blue" && v & ": a block whose top is" && 510 + v && "hu"
+         else
+            set the tooltip of it to tRow && v
+         end if
          add 17 to x
       end repeat
       add 16 to y

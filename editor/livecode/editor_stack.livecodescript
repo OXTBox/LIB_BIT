@@ -39,7 +39,7 @@
 local sDir, sMap, sMapPath, sTags, sFont, sFontPath
 local sCode, sTag, sLeft, sTab, sPropHeight, sExtrude
 local sDirtyMap, sDirtyFont, sBoardPaint, sPx, sGhostOn, sHover
-local sHTool, sHLayer, sHValue, sHBlocks, sCache
+local sHTool, sHLayer, sHValue, sHBlocks, sCache, sHFrom
 local sSegs, sSegCount, sYaw, sPitch, sDist, sRelief3D, sDrag
 local sMirrorH, sMirrorV
 local sTX, sTY, sTZ, sCamOn, sCamAt, sCamId
@@ -81,6 +81,7 @@ on Ed.Init
    put true into sGhostOn
    put "floor" into sHTool
    put "grey" into sHLayer
+   put 0 into sHFrom                         -- the From Floor (1) / From Ceiling (2) brush
    put 100 into sHValue
    put false into sHBlocks
    put true into sRelief3D
@@ -540,7 +541,8 @@ on Ed.MenuMarks
    Ed.MenuMark "Bit", "Mirror V While Drawing", sMirrorV
    Ed.MenuMark "Mesh", "Extrude: Whole Cell", (sMap["meta"]["extrude"] is not "glyph")
    Ed.MenuMark "Mesh", "Extrude: Glyph Shape", (sMap["meta"]["extrude"] is "glyph")
-   Ed.HFromShow
+   if there is a button "HExtrude" then set the hilite of button "HExtrude" to (sMap["meta"]["extrude"] is "glyph")
+   Ed.HTopShow
    if there is a graphic "MirrorHLine" then
       set the visible of graphic "MirrorHLine" to (sMirrorH is true)
       set the visible of graphic "MirrorVLine" to (sMirrorV is true)
@@ -1030,8 +1032,17 @@ end Ed.CeilColour
 
 function Ed.HeightsOf pC, pR
    return "floor" && sMap["floor"][pR][pC] & "  ceiling" && sMap["ceiling"][pR][pC] & "  red" && sMap["red"][pR][pC] & \
-         "  green" && sMap["green"][pR][pC] & "  blue" && sMap["blue"][pR][pC]
+         "  green" && sMap["green"][pR][pC] & "  blue" && sMap["blue"][pR][pC] & Ed.FromShort(sMap["from"][pR][pC])
 end Ed.HeightsOf
+
+-- a cell's From flags in a few words for the hover line ("" when both are off)
+function Ed.FromShort pFlags
+   put pFlags + 0 into pFlags
+   if pFlags is 3 then return "  FROM FLOOR + CEILING"
+   if pFlags is 1 then return "  FROM FLOOR"
+   if pFlags is 2 then return "  FROM CEILING"
+   return empty
+end Ed.FromShort
 
 -- one cell's picture: sPx lines of sPx pixels (4 bytes each), glyph bits in pFore on pBack
 private function edCellLines pCode, pFore, pBack, pBlocks
@@ -1074,6 +1085,32 @@ private function edCellLines pCode, pFore, pBack, pBlocks
    return tOut
 end edCellLines
 
+-- a cell's From flags drawn on its picture: From Floor a bar along its bottom (orange), From Ceiling
+-- along its top (sky blue)
+private function edFromMarks pLines, pFlags
+   local tBar, tRow, y, tN
+   put max(1, sPx div 8) into tN
+   if (pFlags bitAnd 1) is not 0 then
+      put empty into tRow
+      repeat sPx times
+         put edPixel("255,150,0") after tRow
+      end repeat
+      repeat with y = sPx - tN + 1 to sPx
+         put tRow into pLines[y]
+      end repeat
+   end if
+   if (pFlags bitAnd 2) is not 0 then
+      put empty into tRow
+      repeat sPx times
+         put edPixel("90,200,255") after tRow
+      end repeat
+      repeat with y = 1 to tN
+         put tRow into pLines[y]
+      end repeat
+   end if
+   return pLines
+end edFromMarks
+
 -- the two colours of a cell in the current view: "fore|back"
 function Ed.CellColours pC, pR
    local tFloor, tCeil, tBack
@@ -1107,6 +1144,7 @@ on Ed.DrawMap
       repeat while c <= tCols
          put Ed.CellColours(c, r) into tPair
          put edCellLines(sMap["design"][r][c], item 1 of tPair, item 2 of tPair, tBlocks) into tLine[c]
+         if sTab is "Heights" and sMap["from"][r][c] > 0 then put edFromMarks(tLine[c], sMap["from"][r][c]) into tLine[c]
          add 1 to c
       end repeat
       put 1 into y
@@ -1210,7 +1248,8 @@ end Ed.MapDown
 -- pick up what is in a cell, for the thing being painted
 on Ed.PickUp pC, pR
    if sTab is "Heights" then
-      put sMap[Ed.HTarget()][pR][pC] into sHValue
+      put sMap[Ed.HTarget()][pR][pC] + 0 into sHValue
+      if sHLayer is "from" then put sHValue into sHFrom
       Ed.HShowTool
    else if sLeft is "Properties" then
       Ed.SelectTag codepointToNum(sMap["tags"][pR][pC])
@@ -1334,6 +1373,7 @@ end Ed.HTool
 
 function Ed.HPainting
    local tWhat
+   if sHLayer is "from" then return Ed.HFromWords(sHValue)
    if sHLayer is "grey" then
       put sHTool && sHValue into tWhat
       if sHValue is 0 then put " (empty: nothing there)" after tWhat
@@ -1345,8 +1385,8 @@ function Ed.HPainting
    else
       put sHLayer && sHValue into tWhat
       if sHLayer is "red" then put " (dug under the floor)" after tWhat
-      if sHLayer is "green" then put " (built above the ceiling, or the floor)" after tWhat
-      if sHLayer is "blue" then put " (open air, then a floating slab)" after tWhat
+      if sHLayer is "green" and sHValue > 0 then put " (a block, its top at" && 255 + sHValue && "hu)" after tWhat
+      if sHLayer is "blue" and sHValue > 0 then put " (a block, its top at" && 510 + sHValue && "hu)" after tWhat
    end if
    return tWhat
 end Ed.HPainting
@@ -1358,57 +1398,100 @@ on Ed.HShowTool
    set the hilite of button "ToolCeiling" to (sHTool is "ceiling")
    set the hilite of button "ToolBlocks" to sHBlocks
    put "hs_" & sHLayer & "_" & sHValue into tName
-   if there is a graphic tName then
+   if sHLayer is "from" then
+      -- the brush is the two boxes
+      set the rect of graphic "HSel" to the left of button "HFromFloor" - 1, 97, the right of button "HFromCeiling" + 1, 119
+      set the visible of graphic "HSel" to true
+   else if there is a graphic tName then
       set the rect of graphic "HSel" to the left of graphic tName - 1, the top of graphic tName - 1, the right of graphic tName + 1, the bottom of graphic tName + 1
       set the visible of graphic "HSel" to true
    else
       set the visible of graphic "HSel" to false      -- a picked value between two swatches
    end if
-   if sHTool is "floor" then
-      put "glyph: floor" into field "HHint"
-      set the tooltip of field "HHint" to "glyph = floor colour, background = ceiling colour"
-   else
-      put "glyph: ceiling" into field "HHint"
-      set the tooltip of field "HHint" to "glyph = ceiling colour, background = floor colour"
-   end if
    Ed.HFromShow
+   Ed.HTopShow
 end Ed.HShowTool
 
--- From Floor / From Ceiling (the owner, 18 Nov 2026; CELLMAP_V2.md 3b): what a blue block does
--- below and above it, for the whole map, saved with it (fromFloor 1, fromCeiling 1; off = no line)
+-- From Floor / From Ceiling (the owner, 18 Nov 2026; CELLMAP_V2.md 3b), painted cell by cell: a click
+-- on a box turns it on or off and makes the two boxes the brush; a click on a cell then gives it
+-- what the boxes say (its [from] value: 1 From Floor + 2 From Ceiling). A swatch is the brush again.
 on Ed.HFrom pWhich
-   local tKey, tOld
+   local tBit
    if pWhich is "floor" then
-      put "fromFloor" into tKey
+      put 1 into tBit
    else
-      put "fromCeiling" into tKey
+      put 2 into tBit
    end if
-   if sMap["floor"] is not an array then exit Ed.HFrom
-   put sMap into tOld
-   if sMap["meta"][tKey] is 1 then
-      delete variable sMap["meta"][tKey]
+   if sHLayer is "from" then
+      put sHFrom bitXor tBit into sHFrom       -- already the brush: the box turns on or off
    else
-      put 1 into sMap["meta"][tKey]
+      put sHFrom bitOr tBit into sHFrom        -- the boxes become the brush, with this one on
    end if
-   Ed.MapSnap "from" && pWhich && "toggle", tOld
-   Ed.HFromShow
-   Ed.Changed
-   Ed.Status "blue blocks:" && Ed.HFromWords()
+   put "from" into sHLayer
+   put sHFrom into sHValue
+   Ed.HShowTool
+   Ed.ShowWhat
+   Ed.Status "click cells to paint:" && Ed.HFromWords(sHFrom)
 end Ed.HFrom
 
--- the two boxes show the map's own setting
+-- the two boxes show the brush (what a click on a cell gives it)
 on Ed.HFromShow
    if there is not a button "HFromFloor" then exit Ed.HFromShow
-   set the hilite of button "HFromFloor" to (sMap["meta"]["fromFloor"] is 1)
-   set the hilite of button "HFromCeiling" to (sMap["meta"]["fromCeiling"] is 1)
+   set the hilite of button "HFromFloor" to ((sHFrom bitAnd 1) is not 0)
+   set the hilite of button "HFromCeiling" to ((sHFrom bitAnd 2) is not 0)
 end Ed.HFromShow
 
-function Ed.HFromWords
-   if sMap["meta"]["fromFloor"] is 1 and sMap["meta"]["fromCeiling"] is 1 then return "fill from the floor to the top of the map"
-   if sMap["meta"]["fromFloor"] is 1 then return "stand on a solid pillar down to the floor"
-   if sMap["meta"]["fromCeiling"] is 1 then return "reach up to the top of the map (" & CellMap.Top(sMap) & " hu)"
-   return "float (a slab with open air under it)"
+function Ed.HFromWords pFlags
+   put pFlags + 0 into pFlags
+   if pFlags is 3 then return "From Floor + From Ceiling (the cell solid from the floor to the top," && CellMap.Top(sMap) && "hu)"
+   if pFlags is 1 then return "From Floor (fills the cell solid under its block)"
+   if pFlags is 2 then return "From Ceiling (the block hangs from the top of the map," && CellMap.Top(sMap) && "hu)"
+   return "both off (blocks float)"
 end Ed.HFromWords
+
+-- the map's top, shown in the tool row (From Ceiling hangs from it)
+on Ed.HTopShow
+   if there is not a field "HTop" then exit Ed.HTopShow
+   put "top" && CellMap.Top(sMap) into field "HTop"
+end Ed.HTopShow
+
+-- a click on the top: a new top in hu (empty = the default, 765), one undo step
+on Ed.HTopAsk
+   local tOld, tNew
+   if sMap["floor"] is not an array then exit Ed.HTopAsk
+   ask "The top of the map in hu (From Ceiling hangs from it). Empty = 765, the top of the blue band:" with sMap["meta"]["top"]
+   if the result is "Cancel" then exit Ed.HTopAsk
+   put it into tNew
+   Ed.HSetTop tNew
+end Ed.HTopAsk
+
+on Ed.HSetTop pTop
+   local tOld
+   if pTop is not empty and not (pTop is an integer and pTop > 0) then
+      Ed.Status "the top must be a whole number of hu (or empty for 765)"
+      exit Ed.HSetTop
+   end if
+   if pTop is sMap["meta"]["top"] then exit Ed.HSetTop
+   put sMap into tOld
+   if pTop is empty then
+      delete variable sMap["meta"]["top"]
+   else
+      put pTop into sMap["meta"]["top"]
+   end if
+   Ed.MapSnap "set the top", tOld
+   Ed.HTopShow
+   Ed.Changed
+   Ed.Status "the top of the map:" && CellMap.Top(sMap) && "hu"
+end Ed.HSetTop
+
+-- Extrude Glyphs to Heights on or off (the Mesh menu's two Extrude items)
+on Ed.HExtrude
+   if sMap["meta"]["extrude"] is "glyph" then
+      Ed.MeshMenu "Extrude: Whole Cell"
+   else
+      Ed.MeshMenu "Extrude: Glyph Shape"
+   end if
+end Ed.HExtrude
 
 -- a swatch: "hs_<grey|red|green|blue>_<value>"
 on Ed.HSwatch pName
@@ -1795,13 +1878,13 @@ on Ed.Resize pCols, pRows
          if r <= sMap["meta"]["rows"] and c <= sMap["meta"]["cols"] then
             put sMap["design"][r][c] into tNew["design"][r][c]
             put sMap["tags"][r][c] into tNew["tags"][r][c]
-            repeat for each item tKey in "floor,ceiling,red,green,blue"
+            repeat for each item tKey in "floor,ceiling,red,green,blue,from"
                put sMap[tKey][r][c] into tNew[tKey][r][c]
             end repeat
          else
             put 32 into tNew["design"][r][c]
             put space into tNew["tags"][r][c]
-            repeat for each item tKey in "floor,ceiling,red,green,blue"
+            repeat for each item tKey in "floor,ceiling,red,green,blue,from"
                put 0 into tNew[tKey][r][c]
             end repeat
          end if

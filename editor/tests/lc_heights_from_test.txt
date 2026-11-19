@@ -1,9 +1,10 @@
--- the Heights tab's From Floor / From Ceiling boxes (the owner's note, 18 Nov 2026).
--- Rebuilds BitEditor.livecode: run it ONLY in a copy of the editor folder, e.g.
---   python3 -I tests/py_fill_test.py   (writes tests/_fill/fill_test.cellmap)
+-- the Heights tab: From Floor / From Ceiling painted cell by cell, the top, Extrude Glyphs
+-- (the owner's notes, 18 Nov 2026; CELLMAP_V2.md 3b).
+-- Rebuilds BitEditor.livecode: run it ONLY in a copy of the editor folder (ISSUES 0007), e.g.
+--   python3 -I tests/py_fill_test.py   (writes tests/_fill/)
 --   copy editor/ to SCRATCH/LIB_BIT/editor, link SCRATCH/LIB_THEME to the real LIB_THEME, then
 --   flock /tmp/oxt_headless.lock python3 -I OXT-BEYOND/tests/oxt_headless.py --root SCRATCH/LIB_BIT/editor --engine both tests/lc_heights_from_test.txt
-local tD, tState, tText, tPath
+local tD, tState, tText, tPath, tMapC
 repeat for each item tL in "lib_cellmap,build_editor,lib_bit,lib_theme,BitEditor"
   if there is a stack tL then
     if tL is not "BitEditor" then stop using stack tL
@@ -16,33 +17,50 @@ Build.Editor tD
 put ck("built", the result ends with "BitEditor.livecode", true) & return after tLog
 send "Ed.Init" to stack "BitEditor"
 set the defaultStack to "BitEditor"
-send "Ed.OpenMap " & quote & tD & "/tests/_fill/fill_test.cellmap" & quote to stack "BitEditor"
+send "Ed.OpenMap " & quote & tD & "/tests/_fill/fill_off.cellmap" & quote to stack "BitEditor"
 send "Ed.MapTab Heights" to stack "BitEditor"
 put ck("two checkboxes on the Heights tab", the style of button "HFromFloor" & "," & the style of button "HFromCeiling" & "," & the visible of group "HeightTools", "checkbox,checkbox,true") & return after tLog
 put ck("their labels", the label of button "HFromFloor" & "/" & the label of button "HFromCeiling", "From Floor/From Ceiling") & return after tLog
-put ck("an old map opens with both off", the hilite of button "HFromFloor" & "," & the hilite of button "HFromCeiling", "false,false") & return after tLog
-put ck("they sit in the tool row, left of the hint", the right of button "HFromCeiling" < the left of field "HHint" and the top of button "HFromFloor" is 98, true) & return after tLog
-put ck("coloured like the theme (template coloured before create)", the backgroundColor of button "HFromFloor" is not empty, true) & return after tLog
-put value("Ed.State()", stack "BitEditor") into tState
+put ck("the tool row fits: boxes, top, Extrude Glyphs, left to right", the right of button "ToolBlocks" < the left of button "HFromFloor" and the right of button "HFromCeiling" < the left of field "HTop" and the right of field "HTop" < the left of button "HExtrude" and the right of button "HExtrude" <= 772, true) & return after tLog
+put ck("the top is shown", field "HTop", "top 765") & return after tLog
+put ck("the brush starts with both off", the hilite of button "HFromFloor" & "," & the hilite of button "HFromCeiling", "false,false") & return after tLog
+-- From Floor on: the boxes are the brush, a click paints the cell
 send "mouseUp" to button "HFromFloor"
-put ck("From Floor clicked: box on", the hilite of button "HFromFloor", true) & return after tLog
-put ck("From Floor clicked: status says so", field "Status" contains "pillar", true) & return after tLog
+put ck("From Floor clicked: box on, the brush says so", the hilite of button "HFromFloor" & "|" & (value("Ed.What()", stack "BitEditor") contains "From Floor"), "true|true") & return after tLog
+send "Ed.PaintAt 3,2" to stack "BitEditor"
+put value("Ed.TestCell(" & quote & "from" & quote & ",3,2)", stack "BitEditor") into tState
+put ck("painted on col 3 row 2: from 1", tState, 1) & return after tLog
+put ck("other cells keep theirs", value("Ed.TestCell(" & quote & "from" & quote & ",4,2)", stack "BitEditor"), 0) & return after tLog
 send "mouseUp" to button "HFromCeiling"
 put ck("From Ceiling clicked too: both on", the hilite of button "HFromFloor" & "," & the hilite of button "HFromCeiling", "true,true") & return after tLog
-put ck("status: floor to top", field "Status" contains "floor to the top", true) & return after tLog
+send "Ed.PaintAt 4,2" to stack "BitEditor"
+send "mouseUp" to button "HFromFloor"
+send "Ed.PaintAt 5,2" to stack "BitEditor"
+put ck("three cells, three values (1, 3, 2)", value("Ed.TestCell(" & quote & "from" & quote & ",3,2)", stack "BitEditor") & value("Ed.TestCell(" & quote & "from" & quote & ",4,2)", stack "BitEditor") & value("Ed.TestCell(" & quote & "from" & quote & ",5,2)", stack "BitEditor"), "132") & return after tLog
 send "Ed.Undo" to stack "BitEditor"
-put ck("one undo takes From Ceiling back", the hilite of button "HFromFloor" & "," & the hilite of button "HFromCeiling", "true,false") & return after tLog
+put ck("one undo takes the last cell back", value("Ed.TestCell(" & quote & "from" & quote & ",5,2)", stack "BitEditor"), 0) & return after tLog
 send "Ed.Redo" to stack "BitEditor"
-put ck("redo brings it back", the hilite of button "HFromCeiling", true) & return after tLog
+put ck("redo brings it back", value("Ed.TestCell(" & quote & "from" & quote & ",5,2)", stack "BitEditor"), 2) & return after tLog
+-- a swatch is the brush again; the boxes keep what they said
+send "Ed.HSwatch hs_green_10" to stack "BitEditor"
+put ck("a swatch: painting heights again", value("Ed.What()", stack "BitEditor") contains "green 10" and value("Ed.What()", stack "BitEditor") contains "265", true) & return after tLog
+-- the top
+send "Ed.HSetTop 600" to stack "BitEditor"
+put ck("a new top is shown", field "HTop", "top 600") & return after tLog
+-- Extrude Glyphs
+send "mouseUp" to button "HExtrude"
+put ck("Extrude Glyphs on: the button and the Mesh menu say so", the hilite of button "HExtrude" & "|" & (the text of button "Mesh" contains "!cExtrude: Glyph Shape"), "true|true") & return after tLog
+send "mouseUp" to button "HExtrude"
+put ck("and off again", the hilite of button "HExtrude", false) & return after tLog
+-- saved and opened
 put tD & "/tests/_fill/editor_saved.cellmap" into tPath
 send "Ed.SaveMap " & quote & tPath & quote to stack "BitEditor"
 put CellMap.ReadText(tPath) into tText
-put ck("saved: fromCeiling 1 and fromFloor 1 in the map section", tText contains ("fromCeiling" & tab & "1" & return & "fromFloor" & tab & "1"), true) & return after tLog
-send "mouseUp" to button "HFromFloor"
-send "mouseUp" to button "HFromCeiling"
-send "Ed.SaveMap " & quote & tPath & quote to stack "BitEditor"
-put ck("both off again: no line in the file (as an old map)", CellMap.ReadText(tPath) contains "from", false) & return after tLog
-send "Ed.OpenMap " & quote & tD & "/tests/_fill/fill_both.cellmap" & quote to stack "BitEditor"
+put ck("saved: a [from] layer with 1 3 2, the top, no whole-map toggles", tText contains ("[from]" & return & "  0   0   0   0   0   0" & return & "  0   0   1   3   2   0") and tText contains ("top" & tab & "600") and not (tText contains "fromFloor"), true) & return after tLog
+send "Ed.OpenMap " & quote & tPath & quote to stack "BitEditor"
 send "Ed.MapTab Heights" to stack "BitEditor"
-put ck("a saved map with both on opens with both boxes on", the hilite of button "HFromFloor" & "," & the hilite of button "HFromCeiling", "true,true") & return after tLog
+put ck("opened again: the cells keep their values, the top too", value("Ed.TestCell(" & quote & "from" & quote & ",4,2)", stack "BitEditor") & "|" & field "HTop", "3|top 600") & return after tLog
+send "Ed.OpenMap " & quote & tD & "/tests/_fill/fill_off.cellmap" & quote to stack "BitEditor"
+send "Ed.SaveMap " & quote & tPath & quote to stack "BitEditor"
+put ck("a map with no flags saves with no [from] layer (as an old map)", CellMap.ReadText(tPath) contains "[from]", false) & return after tLog
 return tLog

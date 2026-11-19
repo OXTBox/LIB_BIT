@@ -284,7 +284,7 @@ def printable(code):
 
 
 META_ORDER = ['name', 'cols', 'rows', 'cell', 'wallH', 'unitPx', 'font', 'tags', 'version']
-LAYERS2 = ['floor', 'ceiling', 'red', 'green', 'blue']
+LAYERS2 = ['floor', 'ceiling', 'red', 'green', 'blue', 'from']     # from: per cell, 1 From Floor + 2 From Ceiling (3b)
 SECTIONS = ['map', 'design', 'design hex', 'tags', 'heights', 'tagdefs'] + LAYERS2 + ['links', 'objects', 'stack', 'slope']
 V2_DEFAULTS = dict(base=0, step=30, head=83, relief=6, slab=10, steep=60)
 
@@ -311,7 +311,7 @@ def map_text(m):
         out += [''.join(B36[h] for h in row) for row in m['heights']]
     else:
         for layer in LAYERS2:
-            if layer in ('red', 'green', 'blue') and not any(x for row in m[layer] for x in row):
+            if layer in ('red', 'green', 'blue', 'from') and not any(x for row in m[layer] for x in row):
                 continue                                    # all zeros: left out
             out.append('[%s]' % layer)
             out += [' '.join('%3d' % x for x in row) for row in m[layer]]
@@ -460,49 +460,70 @@ def is_water(m, tags, r, c):
     return m['red'][r][c] > 0 and str(tag_info(m, tags, m['tags'][r][c], 'name')).startswith('water')
 
 
+BAND = 255          # one colour band (CELLMAP_V2.md 3b): white 0-255, green 255-510, blue 510-765
+TOP = 3 * BAND      # the map's top when it names none: the top of the blue band
+
+
+def from_flags(m, r, c):
+    """the cell's From Floor (1) / From Ceiling (2) flags, 0-3"""
+    return m['from'][r][c] if m.get('from') else 0
+
+
 def column(m, r, c):
-    """a cell's column in hu, or None for empty space / outside:
-    ground, roof bottom, roof top (None, None with no roof), slab bottom, slab top (None, None with no slab)"""
+    """a cell's column in hu, or None for empty space / outside: a 7-tuple
+    ground, roof bottom, roof top (None, None with no roof), then up to two floating blocks
+    (bottom, top; None, None when missing), lowest first. CELLMAP_V2.md section 3b."""
     if not (0 <= r < m['meta']['rows'] and 0 <= c < m['meta']['cols']):
         return None
-    f, cl, rd, g, b = (m[k][r][c] for k in LAYERS2)
+    f, cl, rd, g, b = (m[k][r][c] for k in LAYERS2[:5])
     if f <= 0:
         return None
-    ground = f - rd + (g if cl == 0 else 0)
-    rb, rt = (cl, cl + g) if cl > 0 else (None, None)
-    top = rt if cl > 0 else ground
-    sb, st = (top + b, top + b + opt(m, 'slab')) if b > 0 else (None, None)
-    if b > 0:
-        # the floating block (CELLMAP_V2.md 3b): From Floor fills under it down to the cell's ground
-        # (one solid pillar), From Ceiling raises its top to the map's top; both: floor to top
-        if m['meta'].get('fromCeiling') == 1:
-            st = max(st, m['_top'] if '_top' in m else map_top(m))
-        if m['meta'].get('fromFloor') == 1:
-            return st, None, None, None, None
-    return ground, rb, rt, sb, st
+    ground = f - rd
+    roof = [cl, cl] if cl > 0 else None
+    slab = opt(m, 'slab')
+    blocks = [[BAND * k + v - slab, BAND * k + v] for k, v in ((1, g), (2, b)) if v > 0]
+    flags = from_flags(m, r, c)
+    if flags & 2:               # From Ceiling: solid from the map's top down to the roof, else the lowest block
+        top = max([map_top(m)] + [t for _, t in blocks])
+        if roof:
+            roof, blocks = [roof[0], max(roof[1], top)], []
+        elif blocks:
+            blocks = [[blocks[0][0], top]]
+    if flags & 1 and (blocks or (flags & 2 and roof)):
+        # From Floor: solid from the ground up to the highest block (roof and air under it filled)
+        ground = max([ground] + [t for _, t in blocks] + ([roof[1]] if roof else []))
+        roof, blocks = None, []
+    merged = []                 # a block that touches what is under it joins it
+    for bb, bt in blocks:
+        if bb <= ground and (roof is None or roof[0] > ground):
+            ground = max(ground, bt)
+        elif roof and bb <= roof[1] and bt >= roof[0]:
+            roof = [min(roof[0], bb), max(roof[1], bt)]
+        elif merged and bb <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], bt)
+        else:
+            merged.append([bb, bt])
+    out = [ground] + (roof or [None, None])
+    for bb, bt in merged:
+        out += [bb, bt]
+    return tuple(out + [None] * (7 - len(out)))
+
+
+def solids(col):
+    """the column's solid parts above the ground: [(bottom, top)], roof and blocks, lowest first"""
+    parts = [(col[i], col[i + 1]) for i in (1, 3, 5) if col[i] is not None]
+    return sorted(parts)
+
+
+def blocks_of(col):
+    """the floating blocks of a column: [(bottom, top)]"""
+    return [(col[i], col[i + 1]) for i in (3, 5) if col[i] is not None]
 
 
 def map_top(m):
-    """the map's top in hu (where From Ceiling blocks reach): the map's own `top`, else the highest
-    point of any cell with both toggles off (slab tops, roof tops, grounds; slopes left out)"""
-    if isinstance(m['meta'].get('top'), (int, float)):
-        return m['meta']['top']
-    flat = dict(m, meta={k: v for k, v in m['meta'].items() if k not in ('fromFloor', 'fromCeiling')})
-    flat.pop('_top', None)
-    top = 0
-    for r in range(m['meta']['rows']):
-        for c in range(m['meta']['cols']):
-            col = column(flat, r, c)
-            if col is not None:
-                top = max([top] + [v for v in col if v is not None])
-    return top
-
-
-def pin_top(m):
-    """the same map with its top worked out once (key '_top', never written to the file)"""
-    if m['meta'].get('fromCeiling') == 1 and '_top' not in m:
-        return dict(m, _top=map_top(m))
-    return m
+    """the map's top in hu (where From Ceiling blocks reach): its own `top`, else TOP (765)"""
+    t = m['meta'].get('top')
+    return t if isinstance(t, (int, float)) else TOP
 
 
 NO_ROOF = 9999
@@ -511,20 +532,7 @@ OPEN_SKY = 5000                 # air above this much is open sky (a slope or a 
 
 def levels(m, r, c):
     """where an actor can stand in a cell: [(top, air above)] in hu, lowest first"""
-    col = column(m, r, c)
-    if col is None:
-        return []
-    ground, rb, rt, sb, st = col
-    out = []
-    if rb is None:
-        out.append((ground, (sb - ground) if sb is not None else NO_ROOF))
-    else:
-        if rb > ground:
-            out.append((ground, rb - ground))
-        out.append((rt, (sb - rt) if sb is not None else NO_ROOF))
-    if sb is not None:
-        out.append((st, NO_ROOF))
-    return out
+    return levels_of(column(m, r, c))
 
 
 def has_relief(m, r, c):
@@ -551,19 +559,16 @@ def shaped(m, font, r, c):
 
 
 def levels_of(col):
-    """levels() from a column"""
+    """levels() from a column: the ground and the top of every solid part, each with the air
+    up to the next part above (NO_ROOF over the highest); a top with no air over it is no level"""
     if col is None:
         return []
-    ground, rb, rt, sb, st = col
+    parts = [(None, col[0])] + solids(col)
     out = []
-    if rb is None:
-        out.append((ground, (sb - ground) if sb is not None else NO_ROOF))
-    else:
-        if rb > ground:
-            out.append((ground, rb - ground))
-        out.append((rt, (sb - rt) if sb is not None else NO_ROOF))
-    if sb is not None:
-        out.append((st, NO_ROOF))
+    for k, (_, t) in enumerate(parts):
+        air = parts[k + 1][0] - t if k + 1 < len(parts) else NO_ROOF
+        if air > 0:
+            out.append((t, air))
     return out
 
 
@@ -603,9 +608,12 @@ def pick(m, ex, ey, ez, dx, dy, dz, max_len):
         return None
     step = m['meta']['cell'] / 8
     k, base = hu(m), opt(m, 'base')
+    last = None
     for i in range(int(max_len / step) + 1):
         x, y, z = ex + dx * (i * step / length), ey + dy * (i * step / length), ez + dz * (i * step / length)
         yh = y / k - base
+        lo, hi = (yh, yh) if last is None else (min(last, yh), max(last, yh))     # a thin block between two looks
+        last = yh
         c, r = cell_at(m, x, z)
         inside = 1 <= c <= m['meta']['cols'] and 1 <= r <= m['meta']['rows']
         col = column(m, r - 1, c - 1) if inside else None
@@ -617,7 +625,7 @@ def pick(m, ex, ey, ez, dx, dy, dz, max_len):
             return c, r, 'ground'
         if col[1] is not None and col[1] <= yh <= max(col[2], col[1] + 4):
             return c, r, 'roof'
-        if col[3] is not None and col[3] <= yh <= col[4]:
+        if any(lo <= bt and hi >= bb for bb, bt in blocks_of(col)):
             return c, r, 'slab'
     return None
 
@@ -690,7 +698,6 @@ def stand_at(m, tags, font, x, z, y, centre=False):
     """the height (engine units) an actor now at height y would stand at on point x,z; None = cannot.
     Blocked by: outside, empty space, a tag whose effect is block or locked, a rise over `step`,
     less than `head` of air. centre (the actor's middle, not its rim): no rise at all on a steep slope."""
-    m = pin_top(m)
     p = point_levels(m, tags, font, x, z)
     if p is None or not p['levels']:
         return None
@@ -711,7 +718,6 @@ def ground_at(m, tags, font, x, z, y=1e9):
 def walk(m, tags, font, x, z, y, dx, dz, radius=12):
     """move an actor (a circle) by dx,dz, sliding along what blocks it: (x, z, y, effect of the cell it is in).
     On a steep slope a `path` or `none` cell answers `slide`."""
-    m = pin_top(m)
     def fits(nx, nz):
         for ax in (-radius, radius):
             for az in (-radius, radius):
@@ -1203,7 +1209,6 @@ def level_segments(m, tags=None, font=None):
     """the map as line segments 'x1,y1,z1,x2,y2,z2,class': x and z in sixteenths of a cell from the
     map's north-west corner (x east, z south), y in hu (up). Rules: CELLMAP_V2.md section 6.
     Sorted; runs along a row or column are merged. Scale with seg_to_engine()."""
-    m = pin_top(m)
     tags = tags or tag_lookup()
     rows, cols = m['meta']['rows'], m['meta']['cols']
     slab, relief = opt(m, 'slab'), opt(m, 'relief')
@@ -1233,8 +1238,8 @@ def level_segments(m, tags=None, font=None):
     def base_class(r, c):
         if m['red'][r][c] > 0:
             return 'pit'
-        if m['green'][r][c] > 0 and m['ceiling'][r][c] == 0:
-            return 'green'
+        if m['green'][r][c] > 0 and from_flags(m, r, c) & 1:
+            return 'green'                  # a green pillar (From Floor)
         return 'wall'
 
     def corners(r, c):                      # the ground's four corner heights: nw, ne, se, sw (CELLMAP_V3.md 2)
@@ -1251,7 +1256,7 @@ def level_segments(m, tags=None, font=None):
             col = C[r][c]
             if col is None:
                 continue
-            ground, rb, rt, sb, st = col
+            ground, rb, rt = col[:3]
             water = is_water(m, tags, r, c)
             k4 = corners(r, c)
             for side, dr, dc in sides:
@@ -1272,9 +1277,10 @@ def level_segments(m, tags=None, font=None):
                     edge('ceiling', rb, r, c, side)
                     if rt != rb:
                         edge('green', rt, r, c, side)
-                if sb is not None and not (n is not None and n[3] == sb and n[4] == st):
-                    edge('sky', sb, r, c, side)
-                    edge('sky', st, r, c, side)
+                for sb, st in blocks_of(col):
+                    if not (n is not None and (sb, st) in blocks_of(n)):
+                        edge('sky', sb, r, c, side)
+                        edge('sky', st, r, c, side)
                 if water:
                     f = m['floor'][r][c]
                     nr, nc = r + dr, c + dc
@@ -1317,7 +1323,7 @@ def level_segments(m, tags=None, font=None):
             if hi - lo > 1:
                 live = [(r, c) for (r, c), a in zip(cells, around) if a is not None]
                 cls = 'pit' if any(m['red'][r][c] > 0 for r, c in live) else \
-                      'green' if any(m['green'][r][c] > 0 and m['ceiling'][r][c] == 0 for r, c in live) else 'wall'
+                      'green' if any(base_class(r, c) == 'green' for r, c in live) else 'wall'
                 ups.add('%d,%d,%d,%d,%d,%d,%s' % (i * 16, lo, j * 16, i * 16, hi, j * 16, cls))
             roofs = [a for a in around if a is not None and a[1] is not None]
             if roofs:
@@ -1325,9 +1331,9 @@ def level_segments(m, tags=None, font=None):
                 if hi > lo:
                     cls = 'green' if any(a[2] > a[1] for a in roofs) else 'ceiling'
                     ups.add('%d,%d,%d,%d,%d,%d,%s' % (i * 16, lo, j * 16, i * 16, hi, j * 16, cls))
-            sbs = [(a[3], a[4]) if a is not None else None for a in around]       # slab bottom, top
-            if len(set(sbs)) > 1:
-                for s, t in set(x for x in sbs if x is not None and x[0] is not None):
+            sbs = [set(blocks_of(a)) if a is not None else set() for a in around]   # slab bottom, top
+            for s, t in set().union(*sbs):
+                if not all((s, t) in x for x in sbs):     # an upright where a block's side shows
                     ups.add('%d,%d,%d,%d,%d,%d,sky' % (i * 16, s, j * 16, i * 16, t, j * 16))
     out = set(ups)
     for (cls, y, axis, fixed), runs in flat.items():
@@ -1379,7 +1385,6 @@ def pack_segments(pack, place, tags=None, font=None):
 def level_boxes(m, tags=None):
     """the solid look (xt3d): one box a column part, engine units, y up, centre + size:
     (x, y, z, width, height, depth, class); class ground / roof / slab / water"""
-    m = pin_top(m)
     tags = tags or tag_lookup()
     k, cell, out = hu(m), m['meta']['cell'], []
     deep = min([0] + [column(m, r, c)[0] for r in range(m['meta']['rows']) for c in range(m['meta']['cols'])
@@ -1389,14 +1394,14 @@ def level_boxes(m, tags=None):
             col = column(m, r, c)
             if col is None:
                 continue
-            ground, rb, rt, sb, st = col
+            ground, rb, rt = col[:3]
             x, z = cell_x(m, c + 1), cell_z(m, r + 1)
             def box(lo, hi, cls):
                 out.append((x, (lo + hi) / 2 * k, z, cell, (hi - lo) * k, cell, cls))
             box(deep, ground, 'ground')
             if rb is not None:
                 box(rb, max(rt, rb + 1), 'roof')
-            if sb is not None:
+            for sb, st in blocks_of(col):
                 box(sb, st, 'slab')
             if is_water(m, tags, r, c):
                 box(ground, m['floor'][r][c], 'water')
@@ -1442,21 +1447,24 @@ def sample():
             ring = min(c - 13, 17 - c, r - 11, 15 - r)
             put(c, r, '.', design=ord('=') if ring == 0 else ord('#'), floor=21 if ring == 0 else 41)
     put(15, 13, 'X', floor=41)
-    # the wizard's tower, north-east: walls 255 + green 200 (455 hu), a room under a thick roof, a door
+    # the wizard's tower, north-east: walls of green 200 From Floor (455 hu, the map's top), a room
+    # under a roof solid From Ceiling (255 up to the top), a door (roof solid from 100 up)
+    m['meta']['top'] = 455
     for c in range(19, 23):
         for r in range(3, 7):
             if c in (19, 22) or r in (3, 6):
-                put(c, r, '#', floor=255, green=200)
+                put(c, r, '#', floor=255, green=200, **{'from': 1})
             else:
-                put(c, r, '.', floor=1, ceiling=255, green=200)
-    put(20, 6, "'", floor=1, ceiling=100, green=355)
-    put(21, 4, 'T', floor=1, ceiling=255, green=200)        # the wizard's teleporter: up to the clouds
-    put(20, 4, '*', floor=1, ceiling=255, green=200)
-    # the clouds, north: slabs floating 220 hu over the yard; the middle one is where the teleporter lands
+                put(c, r, '.', floor=1, ceiling=255, **{'from': 2})
+    put(20, 6, "'", floor=1, ceiling=100, **{'from': 2})
+    put(21, 4, 'T', floor=1, ceiling=255, **{'from': 2})    # the wizard's teleporter: up to the clouds
+    put(20, 4, '*', floor=1, ceiling=255, **{'from': 2})
+    # the clouds, north: green blocks floating at 265 hu (green 10) over the yard; the middle one is
+    # where the teleporter lands
     for c, r in ((12, 2), (13, 2), (14, 2), (13, 3), (14, 3), (15, 3), (16, 3), (14, 4), (15, 4), (16, 4), (17, 4), (15, 5), (16, 5)):
-        put(c, r, blue=220)
-    put(10, 9, blue=180)
-    put(11, 9, blue=180)
+        put(c, r, green=10)
+    put(10, 9, green=1)
+    put(11, 9, green=1)
     # the screen laid flat: glyphs raised in low relief, something to step on
     for j, text in enumerate(('PROMPT &', ' GLAZE  ', 'WALK ME!')):
         for i, ch in enumerate(text):
