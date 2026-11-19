@@ -42,6 +42,14 @@ Version 1 files (below) still read; the BitEditor opens them as version 2 and sa
   starts again when a map is opened.
 - **Drawn tabs.** The native tab control is light grey on white whatever its colours, so the
   tabs are drawn: `Theme.TabStrip` in LIB_THEME (one locked field a tab).
+- **From Floor / From Ceiling** (Heights tab, two boxes right of the Blocks button; the owner's
+  note of 18 Nov 2026). How we read the note: a blue height puts a block up in the air. With
+  both boxes off it floats, as before (you can walk under it). **From Floor** fills everything
+  under it down to the floor, so it becomes a solid pillar you cannot walk under. **From
+  Ceiling** stretches it up to the top of the map (the highest thing on the map, unless the map
+  names its own `top`). Both on: the cell is solid from the floor to the top. The choice is for
+  the whole map and is saved with it; an old map opens with both off and looks as it always did.
+  Green does not float yet, so the boxes only change blue for now. `CELLMAP_V2.md` section 3b.
 - **Extrude: Glyph Shape** (Mesh menu; saved with the map as `extrude glyph`): a height raises
   the cell's glyph, not the whole cell. `CELLMAP_V2.md` section 4b.
 - **Painting in the 3D preview.** The left button paints there with the same brush as on the

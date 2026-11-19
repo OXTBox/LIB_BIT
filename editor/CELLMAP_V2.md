@@ -80,6 +80,32 @@ than `step` (30 hu: a 20 step with a raised glyph on it still passes) above y, w
 distance. Then the tag speaks: effects `block` and `locked` stop it whatever the heights say; the
 others (`swim`, `damage`, `goal` ...) are handed to the game.
 
+### 3b. From Floor / From Ceiling: does the blue block float? (the owner, 2026-11-18)
+"The height settings should have a From Floor toggle and From Ceiling toggle (both can be on or
+off), because the way I just described the heights places floating platforms, which may be
+desired, or not." Two keys in `[map]`, for the whole map, about the **blue block** (the slab above
+the open air, the only thing that floats today):
+
+| `fromFloor` | `fromCeiling` | The blue block | Column (`CellMap.Column`) |
+|---|---|---|---|
+| (none) | (none) | floats: open air under it, a `slab`-thick top (every map before 18 Nov) | `ground,rb,rt,sb,st` as above |
+| `1` | | stands on a solid pillar down to the cell's ground: the air (and any roof) under it is filled | `st,,,,` (one block, ground = the slab's top) |
+| | `1` | still floats, but reaches up to the **map's top** | `ground,rb,rt,sb,top` |
+| `1` | `1` | fills the cell from its ground to the map's top | `top,,,,` |
+
+- The **map's top** is the map's own `top` (hu) when it says one, otherwise the highest point of
+  any cell with both toggles off (`CellMap.Top` / `map_top`; slopes are left out). It is worked out
+  once per call of `LevelSegments`, `Walk`, `StandAt`, `Fits`, `Levels` (`level_boxes` in Python)
+  and never written to the file.
+- Off is written as no line at all, so an old map saves back unchanged. Cells without blue are
+  not touched. Everything that reads the column (walking, levels, drawn lines, xt3d boxes, the
+  checker) follows by itself; in `LevelSegments` a slab's uprights now run from its bottom to its
+  own top (the same lines as before when the toggles are off: every old test is unchanged).
+- Planned (the owner's next note): green will float in its own band above the white heights,
+  and these toggles will then cover green too. Not built yet.
+- Tests: `tests/py_fill_test.py`, `tests/lc_fill_test.txt` (same lines and walks in both
+  libraries), `tests/lc_heights_from_test.txt` (the editor's two boxes; run it in a copy).
+
 ### Version 1 heights
 v1 had one number 0-35 where 9 was a full wall. Read as: 0 -> floor 1 (0 for the void tag
 `space`), n -> n x 100 / 9 rounded (9 -> 100, 1 -> 11, 3 -> 33), at most 255. Old code that
@@ -225,6 +251,9 @@ A **Heights** tab beside 1bit and Cells: the map's glyphs in two colours a cell.
 - The view always opens showing the glyphs (the owner, 2026-11-14: "so the user doesn't get lost
   between general design and detail design"). Blocks (squares instead of glyphs) is an optional
   button, never the default.
+- Two boxes in the tool row, right of Blocks: **From Floor** and **From Ceiling** (section 3b).
+  A click turns one on or off for the whole map (one undo); the status line says what blue
+  blocks now do; they are saved with the map.
 
 ## 9. Status (2026-11-14)
 | Part | State |

@@ -540,6 +540,7 @@ on Ed.MenuMarks
    Ed.MenuMark "Bit", "Mirror V While Drawing", sMirrorV
    Ed.MenuMark "Mesh", "Extrude: Whole Cell", (sMap["meta"]["extrude"] is not "glyph")
    Ed.MenuMark "Mesh", "Extrude: Glyph Shape", (sMap["meta"]["extrude"] is "glyph")
+   Ed.HFromShow
    if there is a graphic "MirrorHLine" then
       set the visible of graphic "MirrorHLine" to (sMirrorH is true)
       set the visible of graphic "MirrorVLine" to (sMirrorV is true)
@@ -1364,11 +1365,50 @@ on Ed.HShowTool
       set the visible of graphic "HSel" to false      -- a picked value between two swatches
    end if
    if sHTool is "floor" then
-      put "glyph = floor, background = ceiling" into field "HHint"
+      put "glyph: floor" into field "HHint"
+      set the tooltip of field "HHint" to "glyph = floor colour, background = ceiling colour"
    else
-      put "glyph = ceiling, background = floor" into field "HHint"
+      put "glyph: ceiling" into field "HHint"
+      set the tooltip of field "HHint" to "glyph = ceiling colour, background = floor colour"
    end if
+   Ed.HFromShow
 end Ed.HShowTool
+
+-- From Floor / From Ceiling (the owner, 18 Nov 2026; CELLMAP_V2.md 3b): what a blue block does
+-- below and above it, for the whole map, saved with it (fromFloor 1, fromCeiling 1; off = no line)
+on Ed.HFrom pWhich
+   local tKey, tOld
+   if pWhich is "floor" then
+      put "fromFloor" into tKey
+   else
+      put "fromCeiling" into tKey
+   end if
+   if sMap["floor"] is not an array then exit Ed.HFrom
+   put sMap into tOld
+   if sMap["meta"][tKey] is 1 then
+      delete variable sMap["meta"][tKey]
+   else
+      put 1 into sMap["meta"][tKey]
+   end if
+   Ed.MapSnap "from" && pWhich && "toggle", tOld
+   Ed.HFromShow
+   Ed.Changed
+   Ed.Status "blue blocks:" && Ed.HFromWords()
+end Ed.HFrom
+
+-- the two boxes show the map's own setting
+on Ed.HFromShow
+   if there is not a button "HFromFloor" then exit Ed.HFromShow
+   set the hilite of button "HFromFloor" to (sMap["meta"]["fromFloor"] is 1)
+   set the hilite of button "HFromCeiling" to (sMap["meta"]["fromCeiling"] is 1)
+end Ed.HFromShow
+
+function Ed.HFromWords
+   if sMap["meta"]["fromFloor"] is 1 and sMap["meta"]["fromCeiling"] is 1 then return "fill from the floor to the top of the map"
+   if sMap["meta"]["fromFloor"] is 1 then return "stand on a solid pillar down to the floor"
+   if sMap["meta"]["fromCeiling"] is 1 then return "reach up to the top of the map (" & CellMap.Top(sMap) & " hu)"
+   return "float (a slab with open air under it)"
+end Ed.HFromWords
 
 -- a swatch: "hs_<grey|red|green|blue>_<value>"
 on Ed.HSwatch pName

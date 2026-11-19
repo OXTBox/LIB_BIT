@@ -240,8 +240,25 @@ command Build.HeightTools
    set the tooltip of button "ToolFloor" to "Greys paint the floor; glyphs show the floor colour"
    set the tooltip of button "ToolCeiling" to "Greys paint the ceiling; glyphs show the ceiling colour"
    set the tooltip of button "ToolBlocks" to "Show squares instead of glyphs (the same two colours)"
+   -- From Floor / From Ceiling (the owner, 18 Nov 2026): a blue block floats, stands on a pillar
+   -- down to its floor, reaches up to the map's top, or both (saved with the map; CELLMAP_V2.md 3b)
+   set the backgroundColor of the templateButton to Theme.Get("panel")
+   set the foregroundColor of the templateButton to Theme.Get("text")
+   set the style of the templateButton to "checkbox"
+   put 508 into x
+   repeat for each item tName in "Floor,Ceiling"
+      create button ("HFrom" & tName) in group "HeightTools"
+      set the label of it to "From" && tName
+      set the autoHilite of it to false
+      set the rect of it to x, 98, x + 94, 118
+      set the script of it to "on mouseUp" & return & "Ed.HFrom " & quote & toLower(tName) & quote & return & "end mouseUp"
+      add 96 to x
+   end repeat
+   reset the templateButton
+   set the tooltip of button "HFromFloor" to "Blue blocks stand on a solid pillar down to their floor (off: they float)"
+   set the tooltip of button "HFromCeiling" to "Blue blocks reach up to the top of the map (off: they are a thin slab)"
    create field "HHint" in group "HeightTools"
-   set the rect of it to 510, 99, 772, 118
+   set the rect of it to 700, 99, 772, 118
    set the lockText of it to true
    set the textSize of it to 10
    set the dontWrap of it to true
