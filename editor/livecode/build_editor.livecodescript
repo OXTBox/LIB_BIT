@@ -229,21 +229,27 @@ command Build.HeightTools
    set the margins of group "HeightTools" to 0
    set the showBorder of group "HeightTools" to false
    put 296 into x
-   repeat for each item tName in "Floor,Ceiling,Blocks"
+   repeat for each item tName in "Floor,Ceiling,Slope,Blocks"
       create button ("Tool" & tName) in group "HeightTools"
       set the label of it to tName
       set the autoHilite of it to false
-      if tName is "Ceiling" then
-         set the rect of it to x, 98, x + 56, 118
-         add 60 to x
-      else
-         set the rect of it to x, 98, x + 48, 118
-         add 52 to x
-      end if
+      switch tName
+         case "Ceiling"
+            set the rect of it to x, 98, x + 48, 118
+            add 51 to x
+            break
+         case "Blocks"
+            set the rect of it to x, 98, x + 42, 118
+            break
+         default
+            set the rect of it to x, 98, x + 36, 118
+            add 39 to x
+      end switch
       set the script of it to "on mouseUp" & return & "Ed.HTool " & quote & toLower(tName) & quote & return & "end mouseUp"
    end repeat
    set the tooltip of button "ToolFloor" to "Greys paint the floor; glyphs show the floor colour on the ceiling colour"
    set the tooltip of button "ToolCeiling" to "Greys paint the ceiling; glyphs show the ceiling colour on the floor colour"
+   set the tooltip of button "ToolSlope" to "Slope (cellmap v3): a grey is the rise; click near a cell's edge or corner to lift it, grey 0 flattens, right-click picks a cell's rises up"
    set the tooltip of button "ToolBlocks" to "Show squares instead of glyphs (the same two colours)"
    -- From Floor / From Ceiling (the owner, 18 Nov 2026): painted cell by cell like a height. A click
    -- on a box makes the two boxes the brush; a click on a cell gives it what the boxes say
@@ -251,18 +257,18 @@ command Build.HeightTools
    set the backgroundColor of the templateButton to Theme.Get("panel")
    set the foregroundColor of the templateButton to Theme.Get("text")
    set the style of the templateButton to "checkbox"
-   put 462 into x
+   put 470 into x
    repeat for each item tName in "Floor,Ceiling"
       create button ("HFrom" & tName) in group "HeightTools"
       set the label of it to "From" && tName
       set the autoHilite of it to false
       if tName is "Ceiling" then
-         set the rect of it to x, 98, x + 92, 118
+         set the rect of it to x, 98, x + 88, 118
       else
-         set the rect of it to x, 98, x + 84, 118
+         set the rect of it to x, 98, x + 78, 118
       end if
       set the script of it to "on mouseUp" & return & "Ed.HFrom " & quote & toLower(tName) & quote & return & "end mouseUp"
-      add 86 to x
+      add 80 to x
    end repeat
    reset the templateButton
    set the tooltip of button "HFromFloor" to "Paint it on cells: From Floor fills the cell solid under its block"

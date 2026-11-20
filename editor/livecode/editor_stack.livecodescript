@@ -18,6 +18,10 @@
 ##           Cells    the glyphs on their property colours
 ##           Heights  the glyphs in floor colour on ceiling colour (Ceiling tool flips);
 ##                    grey / red / green / blue swatches paint the five height layers
+##                    Slope tool (cellmap v3): a grey is the rise; click near a cell's EDGE
+##                    to lift that edge, near a CORNER to lift that corner; grey 0 flattens;
+##                    right-click picks a cell's four rises up and stamps them. An arrow in
+##                    a sloped cell points uphill (brighter = higher), red when too steep.
 ##         What a click paints: Heights tab = a height; otherwise the left tab decides.
 ## RIGHT   the 3D preview: the level's lines exactly as CellMap.LevelSegments gives them to
 ##         Vibecode3D (LIB_EDITOR E13), redrawn at every change. The cell under the mouse (in
@@ -40,6 +44,7 @@ local sDir, sMap, sMapPath, sTags, sFont, sFontPath
 local sCode, sTag, sLeft, sTab, sPropHeight, sExtrude
 local sDirtyMap, sDirtyFont, sBoardPaint, sPx, sGhostOn, sHover
 local sHTool, sHLayer, sHValue, sHBlocks, sCache, sHFrom
+local sSlopePart, sSlopeStamp
 local sSegs, sSegCount, sYaw, sPitch, sDist, sRelief3D, sDrag
 local sMirrorH, sMirrorV
 local sTX, sTY, sTZ, sCamOn, sCamAt, sCamId
@@ -82,6 +87,8 @@ on Ed.Init
    put "floor" into sHTool
    put "grey" into sHLayer
    put 0 into sHFrom                         -- the From Floor (1) / From Ceiling (2) brush
+   put "e" into sSlopePart                   -- the Slope tool: the edge or corner a click lifts
+   put empty into sSlopeStamp                -- "nw,ne,se,sw" picked up from a cell (right-click)
    put 100 into sHValue
    put false into sHBlocks
    put true into sRelief3D
@@ -843,6 +850,10 @@ private command edApply pN, pWhich
    local tGrid, tLine, tWas
    switch sHist[pN]["kind"]
       case "cell"
+         if sHist[pN]["what"] is "slope" then
+            CellMap.SetSlope sMap, sHist[pN]["a"], sHist[pN]["b"], sHist[pN][pWhich]
+            return "map"
+         end if
          put sHist[pN][pWhich] into sMap[sHist[pN]["what"]][sHist[pN]["b"]][sHist[pN]["a"]]
          return "map"
       case "bit"
@@ -1032,8 +1043,17 @@ end Ed.CeilColour
 
 function Ed.HeightsOf pC, pR
    return "floor" && sMap["floor"][pR][pC] & "  ceiling" && sMap["ceiling"][pR][pC] & "  red" && sMap["red"][pR][pC] & \
-         "  green" && sMap["green"][pR][pC] & "  blue" && sMap["blue"][pR][pC] & Ed.FromShort(sMap["from"][pR][pC])
+         "  green" && sMap["green"][pR][pC] & "  blue" && sMap["blue"][pR][pC] & Ed.FromShort(sMap["from"][pR][pC]) & Ed.SlopeShort(pC, pR)
 end Ed.HeightsOf
+
+-- a cell's slope in a few words for the hover line ("" when flat)
+function Ed.SlopeShort pC, pR
+   local tS
+   put CellMap.Slope(sMap, pC, pR) into tS
+   if tS is empty then return empty
+   if CellMap.Steep(sMap, pC, pR) then return "  SLOPE nw,ne,se,sw" && tS && "(STEEP: cannot be walked up)"
+   return "  SLOPE nw,ne,se,sw" && tS
+end Ed.SlopeShort
 
 -- a cell's From flags in a few words for the hover line ("" when both are off)
 function Ed.FromShort pFlags
@@ -1111,6 +1131,73 @@ private function edFromMarks pLines, pFlags
    return pLines
 end edFromMarks
 
+-- a sloped cell drawn on its picture (CELLMAP_V3.md 6): an arrow pointing uphill, brighter for higher,
+-- red when the cell is steep; a dot in every lifted corner (a twisted cell has no single uphill)
+private function edSlopeMarks pLines, pC, pR
+   local tS, tPx, tTop, v, gx, gy, tLen, ux, uy, m, L, tW, tHead, a, tCos, tSin, k, tCorner, x, y
+   put CellMap.Slope(sMap, pC, pR) into tS
+   if tS is empty then return pLines
+   if CellMap.Steep(sMap, pC, pR) then
+      put edPixel("255,60,60") into tPx
+   else
+      put max(tS) into tTop
+      put 120 + round(tTop * 135 / 255) into v
+      put edPixel(v & comma & v & comma & (v div 4)) into tPx
+   end if
+   put (sPx - 1) / 2 into m
+   put max(1, sPx div 10) into tW
+   -- the dots: a lifted corner
+   put max(1, sPx div 8) into k
+   repeat with tCorner = 1 to 4
+      if item tCorner of tS <= 0 then next repeat
+      if tCorner is 1 or tCorner is 4 then put 1 into x else put sPx - k - 1 into x
+      if tCorner is 1 or tCorner is 2 then put 1 into y else put sPx - k - 1 into y
+      put edDot(pLines, x, y, k, tPx) into pLines
+   end repeat
+   -- the arrow: along the way the ground rises (east and south are + in the picture)
+   put (item 2 of tS + item 3 of tS - item 1 of tS - item 4 of tS) / 2 into gx
+   put (item 3 of tS + item 4 of tS - item 1 of tS - item 2 of tS) / 2 into gy
+   put sqrt(gx * gx + gy * gy) into tLen
+   if tLen is 0 or sPx < 6 then return pLines
+   put gx / tLen into ux
+   put gy / tLen into uy
+   put sPx * 0.32 into L
+   put edLine(pLines, m - ux * L, m - uy * L, m + ux * L, m + uy * L, tW, tPx) into pLines
+   put L * 0.6 into tHead
+   repeat for each item a in "0.6,-0.6"
+      put cos(a) into tCos
+      put sin(a) into tSin
+      put edLine(pLines, m + ux * L, m + uy * L, m + ux * L - (ux * tCos - uy * tSin) * tHead, m + uy * L - (ux * tSin + uy * tCos) * tHead, tW, tPx) into pLines
+   end repeat
+   return pLines
+end edSlopeMarks
+
+-- a k x k square of one pixel colour at x,y (0-based) of a cell picture
+private function edDot pLines, pX, pY, pK, pPx
+   local x, y, tX, tY
+   repeat with y = 0 to pK - 1
+      put round(pY) + y into tY
+      if tY < 0 or tY >= sPx then next repeat
+      repeat with x = 0 to pK - 1
+         put round(pX) + x into tX
+         if tX < 0 or tX >= sPx then next repeat
+         put pPx into byte (tX * 4 + 1) to (tX * 4 + 4) of pLines[tY + 1]
+      end repeat
+   end repeat
+   return pLines
+end edDot
+
+-- a line pW pixels wide from x1,y1 to x2,y2 (0-based, fractions allowed) on a cell picture
+private function edLine pLines, pX1, pY1, pX2, pY2, pW, pPx
+   local n, i, h
+   put max(1, round(max(abs(pX2 - pX1), abs(pY2 - pY1)) * 2)) into n
+   put (pW - 1) / 2 into h
+   repeat with i = 0 to n
+      put edDot(pLines, pX1 + (pX2 - pX1) * i / n - h, pY1 + (pY2 - pY1) * i / n - h, pW, pPx) into pLines
+   end repeat
+   return pLines
+end edLine
+
 -- the two colours of a cell in the current view: "fore|back"
 function Ed.CellColours pC, pR
    local tFloor, tCeil, tBack
@@ -1145,6 +1232,7 @@ on Ed.DrawMap
          put Ed.CellColours(c, r) into tPair
          put edCellLines(sMap["design"][r][c], item 1 of tPair, item 2 of tPair, tBlocks) into tLine[c]
          if sTab is "Heights" and sMap["from"][r][c] > 0 then put edFromMarks(tLine[c], sMap["from"][r][c]) into tLine[c]
+         if sTab is "Heights" and sMap["slope"][r][c] is not empty then put edSlopeMarks(tLine[c], c, r) into tLine[c]
          add 1 to c
       end repeat
       put 1 into y
@@ -1223,9 +1311,72 @@ function Ed.MapCell
    return (tX div sPx + 1) & comma & (tY div sPx + 1)
 end Ed.MapCell
 
+-- the part of the cell under the mouse the Slope tool lifts: a corner (nw ne se sw) when the mouse is
+-- in its third of both ways, else the nearest edge (n e s w)
+function Ed.MapPart
+   local tX, tY
+   if there is not an image "Map2D" or sPx is not a number then return sSlopePart
+   put ((the mouseH - the left of image "Map2D") mod sPx + 0.5) / sPx into tX
+   put ((the mouseV - the top of image "Map2D") mod sPx + 0.5) / sPx into tY
+   return Ed.PartAt(tX, tY)
+end Ed.MapPart
+
+-- pX, pY: 0 to 1 across the cell (west to east, north to south)
+function Ed.PartAt pX, pY
+   local tNS, tWE
+   if pY < 1 / 3 then put "n" into tNS
+   if pY > 2 / 3 then put "s" into tNS
+   if pX < 1 / 3 then put "w" into tWE
+   if pX > 2 / 3 then put "e" into tWE
+   if tNS is not empty and tWE is not empty then return tNS & tWE
+   if min(pX, 1 - pX) < min(pY, 1 - pY) then
+      if pX < 0.5 then return "w"
+      return "e"
+   end if
+   if pY < 0.5 then return "n"
+   return "s"
+end Ed.PartAt
+
+-- the corners (1 nw, 2 ne, 3 se, 4 sw) an edge or corner name lifts
+function Ed.PartCorners pPart
+   switch pPart
+      case "n"
+         return "1,2"
+      case "e"
+         return "2,3"
+      case "s"
+         return "3,4"
+      case "w"
+         return "1,4"
+      case "nw"
+         return "1"
+      case "ne"
+         return "2"
+      case "se"
+         return "3"
+      case "sw"
+         return "4"
+   end switch
+   return empty
+end Ed.PartCorners
+
+function Ed.PartWords pPart
+   switch pPart
+      case "n"
+         return "north edge"
+      case "e"
+         return "east edge"
+      case "s"
+         return "south edge"
+      case "w"
+         return "west edge"
+   end switch
+   return pPart && "corner"
+end Ed.PartWords
+
 -- the layer a height click changes: a grey goes to the tool's layer, the colours to their own
 function Ed.HTarget
-   if sHLayer is "grey" then return sHTool
+   if sHLayer is "grey" then return sHTool             -- floor, ceiling or slope
    return sHLayer
 end Ed.HTarget
 
@@ -1239,6 +1390,7 @@ on Ed.MapDown pButton
       Ed.PickUp tC, tR
       exit Ed.MapDown
    end if
+   if sTab is "Heights" and Ed.HTarget() is "slope" then put Ed.MapPart() into sSlopePart
    Ed.StrokeBegin "map", "paint" && toLower(Ed.What())
    put tCell into sStrokeAt
    Ed.PaintCell tC, tR
@@ -1247,7 +1399,11 @@ end Ed.MapDown
 
 -- pick up what is in a cell, for the thing being painted
 on Ed.PickUp pC, pR
-   if sTab is "Heights" then
+   if sTab is "Heights" and Ed.HTarget() is "slope" then
+      put CellMap.Slope(sMap, pC, pR) into sSlopeStamp
+      if sSlopeStamp is empty then put "0,0,0,0" into sSlopeStamp
+      Ed.HShowTool
+   else if sTab is "Heights" then
       put sMap[Ed.HTarget()][pR][pC] + 0 into sHValue
       if sHLayer is "from" then put sHValue into sHFrom
       Ed.HShowTool
@@ -1296,7 +1452,9 @@ end Ed.PaintAt
 -- one cell of a stroke: a height, a property or a glyph (see Ed.What)
 on Ed.PaintCell pC, pR
    local tChar
-   if sTab is "Heights" then
+   if sTab is "Heights" and Ed.HTarget() is "slope" then
+      Ed.SlopeCell pC, pR
+   else if sTab is "Heights" then
       Ed.SetCell Ed.HTarget(), pC, pR, sHValue
    else if sLeft is "Properties" then
       put sTags[sTag]["char"] into tChar
@@ -1312,6 +1470,61 @@ on Ed.PaintCell pC, pR
       Ed.SetCell "design", pC, pR, sCode
    end if
 end Ed.PaintCell
+
+-- the Slope tool on one cell (CELLMAP_V3.md 6): the picked-up rises, or the brush's rise on the part
+-- (edge or corner) chosen where the stroke began; grey 0 flattens. Kept tidy: when all four corners
+-- end up lifted they are lowered and the floor raised by the same amount
+on Ed.SlopeCell pC, pR
+   local tS, i, tLow, tFloor
+   if pC < 1 or pR < 1 or pC > sMap["meta"]["cols"] or pR > sMap["meta"]["rows"] then exit Ed.SlopeCell
+   if sMap["floor"][pR][pC] <= 0 then
+      Ed.Status "col" && pC && "row" && pR && "has floor 0 (empty): give it a floor before sloping it"
+      exit Ed.SlopeCell
+   end if
+   if sSlopeStamp is not empty then
+      put sSlopeStamp into tS
+   else if sHValue <= 0 then
+      put "0,0,0,0" into tS
+   else
+      put CellMap.Slope(sMap, pC, pR) into tS
+      if tS is empty then put "0,0,0,0" into tS
+      repeat for each item i in Ed.PartCorners(sSlopePart)
+         put min(255, sHValue) into item i of tS
+      end repeat
+   end if
+   put min(tS) into tLow
+   put sMap["floor"][pR][pC] into tFloor
+   if tLow > 0 and tFloor + tLow <= 255 then
+      repeat with i = 1 to 4
+         subtract tLow from item i of tS
+      end repeat
+      Ed.SetCell "floor", pC, pR, tFloor + tLow
+   end if
+   Ed.SetSlope pC, pR, tS
+end Ed.SlopeCell
+
+-- the part the next Slope click lifts (scripts, tests): n e s w, nw ne se sw
+on Ed.SlopePart pPart
+   if Ed.PartCorners(pPart) is empty then exit Ed.SlopePart
+   put pPart into sSlopePart
+   Ed.ShowWhat
+end Ed.SlopePart
+
+-- a cell's slope "nw,ne,se,sw" (empty or zeros = flat), recorded like any cell
+on Ed.SetSlope pC, pR, pRises
+   local tOld, tNew
+   put CellMap.Slope(sMap, pC, pR) into tOld
+   put pRises into tNew
+   if tNew is "0,0,0,0" then put empty into tNew
+   if tOld is tNew then exit Ed.SetSlope
+   CellMap.SetSlope sMap, pC, pR, tNew
+   put CellMap.Slope(sMap, pC, pR) into tNew
+   if tOld is tNew then exit Ed.SetSlope
+   Ed.Record "cell", "slope", pC, pR, tOld, tNew
+   put true into sDirtyMap
+   put true into sDirty2D
+   put true into sDirty3D
+end Ed.SetSlope
 
 -------------------------------------------------------------------- the ghost: the glyph about to be painted
 
@@ -1364,6 +1577,11 @@ on Ed.HTool pTool
       put not sHBlocks into sHBlocks
    else
       put pTool into sHTool
+      put empty into sSlopeStamp
+      if pTool is "slope" and sHLayer is not "grey" then
+         put "grey" into sHLayer
+         put 30 into sHValue
+      end if
    end if
    Ed.DrawMap
    Ed.HShowTool
@@ -1374,6 +1592,11 @@ end Ed.HTool
 function Ed.HPainting
    local tWhat
    if sHLayer is "from" then return Ed.HFromWords(sHValue)
+   if sHLayer is "grey" and sHTool is "slope" then
+      if sSlopeStamp is not empty then return "slope: the picked-up rises nw,ne,se,sw" && sSlopeStamp && "(a grey swatch ends the stamp)"
+      if sHValue <= 0 then return "slope 0: flattens the cell"
+      return "slope: lift the edge or corner nearest the click by" && sHValue && "hu (last:" && Ed.PartWords(sSlopePart) & ")"
+   end if
    if sHLayer is "grey" then
       put sHTool && sHValue into tWhat
       if sHValue is 0 then put " (empty: nothing there)" after tWhat
@@ -1396,6 +1619,7 @@ on Ed.HShowTool
    if there is not a button "ToolFloor" then exit Ed.HShowTool
    set the hilite of button "ToolFloor" to (sHTool is "floor")
    set the hilite of button "ToolCeiling" to (sHTool is "ceiling")
+   if there is a button "ToolSlope" then set the hilite of button "ToolSlope" to (sHTool is "slope")
    set the hilite of button "ToolBlocks" to sHBlocks
    put "hs_" & sHLayer & "_" & sHValue into tName
    if sHLayer is "from" then
@@ -1499,6 +1723,7 @@ on Ed.HSwatch pName
    put item 2 of pName into sHLayer
    put item 3 of pName into sHValue
    set the itemDel to comma
+   put empty into sSlopeStamp
    Ed.HShowTool
    Ed.ShowWhat
    Ed.Status "heights:" && Ed.HPainting()

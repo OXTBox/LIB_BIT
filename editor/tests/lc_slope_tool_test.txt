@@ -1,0 +1,77 @@
+-- the BitEditor's Slope tool (cellmap v3, CELLMAP_V3.md section 6; A-92 3).
+-- Rebuilds BitEditor.livecode: run it ONLY in a copy of the editor folder (ISSUES 0007), e.g.
+--   python3 -I tests/py_fill_test.py   (writes tests/_fill/)
+--   copy editor/ to SCRATCH/LIB_BIT/editor, link SCRATCH/LIB_THEME to the real LIB_THEME, then
+--   flock /tmp/oxt_headless.lock python3 -I OXT-BEYOND/tests/oxt_headless.py --root SCRATCH/LIB_BIT/editor --engine both tests/lc_slope_tool_test.txt
+local tD, tText, tPath, tPix
+repeat for each item tL in "lib_cellmap,build_editor,lib_bit,lib_theme,BitEditor"
+  if there is a stack tL then
+    if tL is not "BitEditor" then stop using stack tL
+    delete stack tL
+  end if
+end repeat
+put "/home/igame3d/projects/LIB_BIT/editor" into tD
+start using stack (tD & "/livecode/build_editor.livecodescript")
+Build.Editor tD
+put ck("built", the result ends with "BitEditor.livecode", true) & return after tLog
+send "Ed.Init" to stack "BitEditor"
+set the defaultStack to "BitEditor"
+send "Ed.OpenMap " & quote & tD & "/tests/_fill/fill_off.cellmap" & quote to stack "BitEditor"
+send "Ed.MapTab Heights" to stack "BitEditor"
+put ck("a Slope tool between Ceiling and Blocks, the row still fits", the right of button "ToolCeiling" < the left of button "ToolSlope" and the right of button "ToolSlope" < the left of button "ToolBlocks" and the right of button "ToolBlocks" < the left of button "HFromFloor" and the right of button "HFromCeiling" < the left of field "HTop", true) & return after tLog
+send "mouseUp" to button "ToolSlope"
+put ck("Slope picked: its button lit, the brush says slope", the hilite of button "ToolSlope" & "|" & the hilite of button "ToolFloor" & "|" & (value("Ed.What()", stack "BitEditor") contains "slope"), "true|false|true") & return after tLog
+-- the parts of a cell a click lifts
+put ck("parts: middle of the east side, north-west corner, near the south edge", value("Ed.PartAt(0.9,0.5)", stack "BitEditor") & "," & value("Ed.PartAt(0.1,0.1)", stack "BitEditor") & "," & value("Ed.PartAt(0.5,0.8)", stack "BitEditor"), "e,nw,s") & return after tLog
+send "Ed.HSwatch hs_grey_30" to stack "BitEditor"
+send "Ed.SlopePart e" to stack "BitEditor"
+send "Ed.PaintAt 2,1" to stack "BitEditor"
+put ck("east edge lifted 30", value("Ed.TestCell(" & quote & "slope" & quote & ",2,1)", stack "BitEditor"), "0,30,30,0") & return after tLog
+send "Ed.SlopePart nw" to stack "BitEditor"
+send "Ed.PaintAt 2,1" to stack "BitEditor"
+put ck("then the north-west corner too", value("Ed.TestCell(" & quote & "slope" & quote & ",2,1)", stack "BitEditor"), "30,30,30,0") & return after tLog
+send "Ed.SlopePart sw" to stack "BitEditor"
+send "Ed.PaintAt 2,1" to stack "BitEditor"
+put ck("all four lifted: kept tidy, the floor rises 30 instead", value("Ed.TestCell(" & quote & "slope" & quote & ",2,1)", stack "BitEditor") & "|" & value("Ed.TestCell(" & quote & "floor" & quote & ",2,1)", stack "BitEditor"), "|31") & return after tLog
+send "Ed.Undo" to stack "BitEditor"
+put ck("one undo: the slope and the floor back together", value("Ed.TestCell(" & quote & "slope" & quote & ",2,1)", stack "BitEditor") & "|" & value("Ed.TestCell(" & quote & "floor" & quote & ",2,1)", stack "BitEditor"), "30,30,30,0|1") & return after tLog
+send "Ed.Redo" to stack "BitEditor"
+send "Ed.Undo" to stack "BitEditor"
+-- steep: drawn red, the hover line says so
+send "Ed.HSwatch hs_grey_90" to stack "BitEditor"
+send "Ed.SlopePart s" to stack "BitEditor"
+send "Ed.PaintAt 4,1" to stack "BitEditor"
+put ck("south edge 90: steep", value("Ed.TestCell(" & quote & "slope" & quote & ",4,1)", stack "BitEditor"), "0,0,90,90") & return after tLog
+put ck("the hover words say STEEP", value("Ed.HeightsOf(4,1)", stack "BitEditor") contains "SLOPE nw,ne,se,sw 0,0,90,90 (STEEP", true) & return after tLog
+put value("Ed.MapPixels(4,1)", stack "BitEditor") into tPix
+put ck("the steep cell is drawn with a red arrow", tPix contains "255,60,60 x", true) & return after tLog
+put value("Ed.MapPixels(2,1)", stack "BitEditor") into tPix
+put ck("the gentle cell's arrow is yellow, not red", (not (tPix contains "255,60,60")) and (tPix contains "136,136,34 x"), true) & return after tLog
+put ck("a flat cell has no arrow", value("Ed.MapPixels(1,1)", stack "BitEditor") contains "60,60 x", false) & return after tLog
+-- right-click picks the rises up; painting stamps them
+send "Ed.PickUp 4,1" to stack "BitEditor"
+put ck("picked up: the brush is the four rises", value("Ed.What()", stack "BitEditor") contains "0,0,90,90", true) & return after tLog
+send "Ed.PaintAt 5,1" to stack "BitEditor"
+put ck("stamped on col 5", value("Ed.TestCell(" & quote & "slope" & quote & ",5,1)", stack "BitEditor"), "0,0,90,90") & return after tLog
+-- grey 0 flattens; an empty cell refuses
+send "Ed.HSwatch hs_grey_0" to stack "BitEditor"
+send "Ed.PaintAt 5,1" to stack "BitEditor"
+put ck("grey 0 flattens", value("Ed.TestCell(" & quote & "slope" & quote & ",5,1)", stack "BitEditor"), empty) & return after tLog
+-- a stroke across a row lifts the same edge of every cell
+send "Ed.HSwatch hs_grey_20" to stack "BitEditor"
+send "Ed.SlopePart n" to stack "BitEditor"
+send "Ed.TestStroke " & quote & "map" & quote & "," & quote & "1,3 4,3" & quote to stack "BitEditor"
+put ck("a drag: the north edge of cols 1-4 of row 3", value("Ed.TestCell(" & quote & "slope" & quote & ",1,3)", stack "BitEditor") & "|" & value("Ed.TestCell(" & quote & "slope" & quote & ",4,3)", stack "BitEditor") & "|" & value("Ed.TestCell(" & quote & "slope" & quote & ",5,3)", stack "BitEditor"), "20,20,0,0|20,20,0,0|") & return after tLog
+-- the 3D lines follow
+put ck("the 3D preview has lines", value("Ed.State()", stack "BitEditor") contains " lines|", true) & return after tLog
+-- saved and opened: version 3 with a [slope] section
+put tD & "/tests/_fill/slope_saved.cellmap" into tPath
+send "Ed.SaveMap " & quote & tPath & quote to stack "BitEditor"
+put CellMap.ReadText(tPath) into tText
+put ck("saved: version 3, a [slope] line for col 4 row 1", tText contains ("version" & tab & "3") and tText contains ("[slope]") and tText contains ("4,1" & tab & "0 0 90 90"), true) & return after tLog
+send "Ed.OpenMap " & quote & tPath & quote to stack "BitEditor"
+put ck("opened again: the slope is there", value("Ed.TestCell(" & quote & "slope" & quote & ",4,1)", stack "BitEditor"), "0,0,90,90") & return after tLog
+send "Ed.OpenMap " & quote & tD & "/tests/_fill/fill_off.cellmap" & quote to stack "BitEditor"
+send "Ed.SaveMap " & quote & tPath & quote to stack "BitEditor"
+put ck("a map with no slope still saves as version 2", CellMap.ReadText(tPath) contains ("version" & tab & "2") and not (CellMap.ReadText(tPath) contains "[slope]"), true) & return after tLog
+return tLog
