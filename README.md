@@ -38,3 +38,9 @@ whole font, actors > animations > frames, undo, and drawing a grid into an xt3d 
 Outline tracing is a separate library, LIB_TRACE.
 
 Part of the family of separate libraries listed in `~/projects/LIB_MCP/README.md`.
+
+## Licence
+
+GPL-3.0 (see `LICENSE`), because the xTalk work here is built on the GPL-licensed LiveCode Community 9 engine. Copyright (c) 2026 xAction.
+
+The Python files (`.py`) and other material that is not xTalk are also offered under the MIT licence, Copyright (c) 2026 xAction: you may use them under either licence.
