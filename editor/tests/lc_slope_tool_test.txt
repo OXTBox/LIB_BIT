@@ -46,7 +46,7 @@ put ck("the hover words say STEEP", value("Ed.HeightsOf(4,1)", stack "BitEditor"
 put value("Ed.MapPixels(4,1)", stack "BitEditor") into tPix
 put ck("the steep cell is drawn with a red arrow", tPix contains "255,60,60 x", true) & return after tLog
 put value("Ed.MapPixels(2,1)", stack "BitEditor") into tPix
-put ck("the gentle cell's arrow is yellow, not red", (not (tPix contains "255,60,60")) and (tPix contains "136,136,34 x"), true) & return after tLog
+put ck("the gentle cell's arrow is yellow, not red", (not (tPix contains "255,60,60")) and (tPix contains "171,171,42 x"), true) & return after tLog
 put ck("a flat cell has no arrow", value("Ed.MapPixels(1,1)", stack "BitEditor") contains "60,60 x", false) & return after tLog
 -- right-click picks the rises up; painting stamps them
 send "Ed.PickUp 4,1" to stack "BitEditor"

@@ -35,6 +35,10 @@
 ## UNDO    Edit menu, Ctrl+Z / Ctrl+Y. Every changed bit or cell is its own numbered line of the
 ##         change history (with its time: paths and animation can replay it); one press of the
 ##         mouse (a stroke) or one menu command is one undo. File-less: Edit > Export Change History.
+## PACKS   File > Open Pack / New Pack (cellmap v3, CELLMAP_V3.md 4 and 6): a floating "Pack" window
+##         lists the level's maps (double-click opens one for painting; Up / Down order them; Place
+##         sets place, base, col,row), its doors (Door to... from the last cell clicked) and the
+##         E12 checker's lines (Check; a click on a line opens its map and marks the cell).
 ## STROKES a press on the board or the map starts a stroke; Ed.StrokeTick follows the mouse
 ##         every 15 ms and paints every cell on the line since the last look, so a fast drag
 ##         leaves no gaps. The slow redraws (glyph list, 3D) wait for a pause or the release.
@@ -45,6 +49,7 @@ local sCode, sTag, sLeft, sTab, sPropHeight, sExtrude
 local sDirtyMap, sDirtyFont, sBoardPaint, sPx, sGhostOn, sHover
 local sHTool, sHLayer, sHValue, sHBlocks, sCache, sHFrom
 local sSlopePart, sSlopeStamp
+local sPack, sPackPath, sPackSel, sPackOpen, sPackDirty, sLastCell, sCheck
 local sSegs, sSegCount, sYaw, sPitch, sDist, sRelief3D, sDrag
 local sMirrorH, sMirrorV
 local sTX, sTY, sTZ, sCamOn, sCamAt, sCamId
@@ -124,6 +129,9 @@ on Ed.OpenMap pPath
    put sMap["meta"]["version"] into tWas
    CellMap.Upgrade sMap                    -- a version 1 map is edited (and saved) as version 2
    put pPath into sMapPath
+   put Ed.PackIdOf(pPath) into sPackOpen          -- the map's id when it belongs to the open pack
+   put empty into sLastCell
+   if there is a graphic "MarkBox" then set the visible of graphic "MarkBox" to false
    Ed.LoadFont sMap["meta"]["font"]
    put false into sDirtyMap
    put empty into sCache
@@ -131,6 +139,7 @@ on Ed.OpenMap pPath
    Ed.ResetCamera
    Ed.Changed
    Ed.MenuMarks
+   Ed.PackFill
    if tWas < 2 then
       Ed.Status "opened" && Ed.ShortName(pPath) && "(version 1: saving writes version 2, heights as floors)"
    else
@@ -1141,7 +1150,7 @@ private function edSlopeMarks pLines, pC, pR
       put edPixel("255,60,60") into tPx
    else
       put max(tS) into tTop
-      put 120 + round(tTop * 135 / 255) into v
+      put 160 + round(tTop * 95 / 255) into v
       put edPixel(v & comma & v & comma & (v div 4)) into tPx
    end if
    put (sPx - 1) / 2 into m
@@ -1386,6 +1395,8 @@ on Ed.MapDown pButton
    if tCell is empty then exit Ed.MapDown
    put item 1 of tCell into tC
    put item 2 of tCell into tR
+   put tCell into sLastCell
+   if there is a graphic "MarkBox" then set the visible of graphic "MarkBox" to false
    if pButton is 3 or the optionKey is down then
       Ed.PickUp tC, tR
       exit Ed.MapDown
@@ -1728,6 +1739,510 @@ on Ed.HSwatch pName
    Ed.ShowWhat
    Ed.Status "heights:" && Ed.HPainting()
 end Ed.HSwatch
+
+-------------------------------------------------------------------- map packs (cellmap v3: CELLMAP_V3.md 4 and 6)
+-- sPack is CellMap.ReadPack's array (maps[n] id file place base at map, doors[n] from type to note);
+-- sPackSel the selected map's number, sPackOpen the id of the map open for painting (empty: a map
+-- that is not in the pack), sCheck the checker's last lines (kind, map, col,row, words: tabs)
+
+function Ed.PackFolder
+   set the itemDel to "/"
+   get item 1 to -2 of sPackPath
+   set the itemDel to comma
+   return it
+end Ed.PackFolder
+
+-- the id of the pack's map stored in pPath (empty: not one of them)
+function Ed.PackIdOf pPath
+   local i
+   if sPackPath is empty or sPack["count"] is not a number then return empty
+   repeat with i = 1 to sPack["count"]
+      if Ed.PackFolder() & "/" & sPack["maps"][i]["file"] is pPath then return sPack["maps"][i]["id"]
+   end repeat
+   return empty
+end Ed.PackIdOf
+
+on Ed.OpenPack pPath
+   local n
+   if there is not a file pPath then
+      Ed.Status "no pack" && pPath
+      exit Ed.OpenPack
+   end if
+   put CellMap.ReadPack(pPath) into sPack
+   put pPath into sPackPath
+   put false into sPackDirty
+   put empty into sCheck
+   put CellMap.PackIndex(sPack, sPack["meta"]["start"]) into n
+   if n < 1 then put 1 into n
+   put n into sPackSel
+   Ed.PackPanel
+   if sPack["count"] >= 1 and sPack["maps"][n]["map"] is an array then Ed.PackOpenMap n
+   Ed.PackFill
+   if sPack["problems"] is not empty then
+      Ed.Status "pack" && Ed.ShortName(pPath) & ":" && the number of lines of sPack["problems"] && "problems (Check lists them)"
+   else
+      Ed.Status "pack" && Ed.ShortName(pPath) & ":" && sPack["count"] && "maps; double-click one to paint it"
+   end if
+end Ed.OpenPack
+
+-- a new pack holding the map open now; it must be saved, and the pack goes in its folder
+on Ed.NewPackAsk
+   local tName
+   if sMapPath is empty or there is not a file sMapPath then
+      Ed.Status "save the map first: a pack is written beside its maps"
+      exit Ed.NewPackAsk
+   end if
+   ask "A name for the new pack (written beside this map, as <name>.cellpack):" with sMap["meta"]["name"]
+   if it is empty or the result is "Cancel" then exit Ed.NewPackAsk
+   put it into tName
+   Ed.NewPack tName
+end Ed.NewPackAsk
+
+on Ed.NewPack pName
+   local tPack, tFolder, tId
+   set the itemDel to "/"
+   put item 1 to -2 of sMapPath into tFolder
+   put item -1 of sMapPath into tPack["maps"][1]["file"]
+   set the itemDel to comma
+   put sMap["meta"]["name"] into tId
+   if tId is empty then put "map1" into tId
+   replace space with "_" in tId
+   put pName into tPack["meta"]["name"]
+   put tId into tPack["meta"]["start"]
+   put tId into tPack["maps"][1]["id"]
+   put "main" into tPack["maps"][1]["place"]
+   put 0 into tPack["maps"][1]["base"]
+   put "1,1" into tPack["maps"][1]["at"]
+   put 1 into tPack["count"]
+   put tFolder & "/" & pName & ".cellpack" into sPackPath
+   put tPack into sPack
+   Ed.PackSave
+   Ed.OpenPack sPackPath
+end Ed.NewPack
+
+on Ed.PackSave
+   if sPackPath is empty then exit Ed.PackSave
+   put textEncode(CellMap.PackToText(sPack), "UTF-8") into URL ("binfile:" & sPackPath)
+   put false into sPackDirty
+   Ed.PackFill
+   Ed.Status "saved pack" && Ed.ShortName(sPackPath)
+end Ed.PackSave
+
+-- open map n of the pack for painting (asks first when the open map has unsaved changes)
+on Ed.PackOpenMap n
+   local tPath
+   if n < 1 or n > sPack["count"] then exit Ed.PackOpenMap
+   put Ed.PackFolder() & "/" & sPack["maps"][n]["file"] into tPath
+   if there is not a file tPath then
+      Ed.Status "no file" && sPack["maps"][n]["file"] && "beside the pack"
+      exit Ed.PackOpenMap
+   end if
+   if tPath is sMapPath then
+      put n into sPackSel                            -- already open (maybe with unsaved changes): keep it
+      put sPack["maps"][n]["id"] into sPackOpen
+      Ed.PackFill
+      exit Ed.PackOpenMap
+   end if
+   if sDirtyMap then
+      answer "Save the changes to" && Ed.ShortName(sMapPath) && "first?" with "Cancel" or "Don't Save" or "Save"
+      if it is "Cancel" then exit Ed.PackOpenMap
+      if it is "Save" then Ed.SaveMap
+   end if
+   put n into sPackSel
+   Ed.OpenMap tPath
+   Ed.PackFill
+end Ed.PackOpenMap
+
+-- the pack window: built the first time it is wanted, floating at the right of the screen
+on Ed.PackPanel
+   local tS, tB, tF, tPanel, tText, tY, x, tName, tW, tWas
+   put "BitEditorPack" into tS
+   if there is a stack tS then
+      try
+         palette stack tS
+      end try
+      Ed.PackFill
+      exit Ed.PackPanel
+   end if
+   put the defaultStack into tWas
+   put the effective backgroundColor of button "ToolFloor" into tB
+   put the effective foregroundColor of button "ToolFloor" into tF
+   put the effective backgroundColor of graphic "MapFrame" into tPanel
+   put the effective foregroundColor of field "PaintInfo" into tText
+   put 344 into tW
+   create invisible stack tS
+   set the defaultStack to tS
+   set the title of stack tS to "FOR OWNER | BitEditor Pack"
+   dispatch "Users.TitleStack" with tS, "BitEditor Pack"
+   set the rect of stack tS to item 3 of the screenRect - tW - 12, 32, item 3 of the screenRect - 12, 32 + 600
+   set the resizable of stack tS to false
+   set the destroyStack of stack tS to true          -- closing it frees it (LIB_ALPHA 12b)
+   set the backgroundColor of stack tS to tPanel
+   set the foregroundColor of stack tS to tText
+   set the textSize of stack tS to 11
+   set the script of stack tS to "on closeStackRequest" & return & "set the destroyStack of me to true" & return & "pass closeStackRequest" & return & "end closeStackRequest"
+   -- template colours first (the owner's rule), then the controls
+   reset the templateField
+   set the backgroundColor of the templateField to kDark
+   set the foregroundColor of the templateField to kLit
+   set the textSize of the templateField to 11
+   set the lockText of the templateField to true
+   set the dontWrap of the templateField to true
+   reset the templateButton
+   set the style of the templateButton to "standard"
+   set the backgroundColor of the templateButton to tB
+   set the foregroundColor of the templateButton to tF
+   set the textSize of the templateButton to 11
+   create field "PackTitle"
+   set the rect of it to 8, 8, tW - 8, 42
+   set the backgroundColor of it to tPanel
+   set the foregroundColor of it to tText
+   Ed.PackLabel "LMaps", "MAPS  (double-click = paint it)", 46, tW, tPanel, tText
+   create field "PackMaps"
+   set the rect of it to 8, 62, tW - 8, 172
+   set the listBehavior of it to true
+   set the vScrollbar of it to true
+   set the tabStops of it to "74,124,160,200"
+   set the script of it to "on mouseUp" & return & "send " & quote & "Ed.PackDo Select" & quote & " to stack " & quote & "BitEditor" & quote & return & "end mouseUp" & return & \
+         "on mouseDoubleUp" & return & "send " & quote & "Ed.PackDo Open" & quote & " to stack " & quote & "BitEditor" & quote & return & "end mouseDoubleUp"
+   put 8 into x
+   repeat for each item tName in "Open,Up,Down,Place...,Add...,Remove,Start"
+      Ed.PackButton tName, x, 176, 44
+      add 47 to x
+   end repeat
+   Ed.PackLabel "LDoors", "DOORS  (one way each; Door to... starts at the last cell clicked)", 204, tW, tPanel, tText
+   create field "PackDoors"
+   set the rect of it to 8, 220, tW - 8, 290
+   set the listBehavior of it to true
+   set the vScrollbar of it to true
+   set the tabStops of it to "100,150,250"
+   put 8 into x
+   repeat for each item tName in "Door to...,Remove Door"
+      Ed.PackButton tName, x, 294, 90
+      add 94 to x
+   end repeat
+   Ed.PackLabel "LCheck", "CHECK (E12)  (a click on a line marks its cell)", 322, tW, tPanel, tText
+   Ed.PackButton "Check", tW - 98, 318, 90
+   create field "PackCheck"
+   set the rect of it to 8, 342, tW - 8, 556
+   set the listBehavior of it to true
+   set the vScrollbar of it to true
+   set the dontWrap of it to false
+   set the tabStops of it to "70,130,170"
+   set the script of it to "on mouseUp" & return & "send " & quote & "Ed.PackDo Jump" & quote & " to stack " & quote & "BitEditor" & quote & return & "end mouseUp"
+   put 8 into x
+   repeat for each item tName in "Open Pack...,New Pack...,Save Pack"
+      Ed.PackButton tName, x, 566, 104
+      add 110 to x
+   end repeat
+   reset the templateField
+   reset the templateButton
+   set the defaultStack to tWas
+   try
+      palette stack tS
+   end try
+   Ed.PackFill
+end Ed.PackPanel
+
+on Ed.PackLabel pName, pText, pTop, pW, pBack, pFore
+   create field pName
+   set the rect of it to 8, pTop, pW - 8, pTop + 16
+   set the backgroundColor of it to pBack
+   set the foregroundColor of it to pFore
+   set the opaque of it to false
+   set the showBorder of it to false
+   set the textSize of it to 10
+   put pText into it
+end Ed.PackLabel
+
+on Ed.PackButton pName, pLeft, pTop, pWidth
+   create button pName
+   set the rect of it to pLeft, pTop, pLeft + pWidth, pTop + 22
+   set the script of it to "on mouseUp" & return & "send " & quote & "Ed.PackDo " & pName & quote & " to stack " & quote & "BitEditor" & quote & return & "end mouseUp"
+end Ed.PackButton
+
+-- the window's lists from sPack and sCheck
+on Ed.PackFill
+   local tS, tOut, i, tLine, tMark, tKind, tWords
+   put "BitEditorPack" into tS
+   if there is not a stack tS then exit Ed.PackFill
+   lock screen
+   if sPackPath is empty then
+      put "no pack open: File > Open Pack..., or New Pack... (it holds the map open now)" & return & "Check checks the open map alone" into field "PackTitle" of stack tS
+   else
+      put "PACK" && sPack["meta"]["name"] && "  start:" && sPack["meta"]["start"] into tLine
+      if sPackDirty then put "   [pack not saved]" after tLine
+      if sPackOpen is empty then
+         put tLine & return & Ed.ShortName(sPackPath) && "  painting a map outside the pack (Check checks it alone)" into field "PackTitle" of stack tS
+      else
+         put tLine & return & Ed.ShortName(sPackPath) && "  painting:" && sPackOpen into field "PackTitle" of stack tS
+      end if
+   end if
+   put empty into tOut
+   if sPack["count"] is a number then
+      repeat with i = 1 to sPack["count"]
+         put empty into tMark
+         if sPack["maps"][i]["id"] is sPackOpen and sPackOpen is not empty then put "* " into tMark
+         put tMark & sPack["maps"][i]["id"] & tab & sPack["maps"][i]["place"] & tab & sPack["maps"][i]["base"] & tab & \
+               sPack["maps"][i]["at"] & tab & sPack["maps"][i]["file"] & return after tOut
+      end repeat
+   end if
+   put char 1 to -2 of tOut into field "PackMaps" of stack tS
+   if sPackSel >= 1 and sPackSel <= sPack["count"] then set the hilitedLine of field "PackMaps" of stack tS to sPackSel
+   put empty into tOut
+   repeat with i = 1 to CellMap.Count(sPack["doors"])
+      put sPack["doors"][i]["from"] & tab & sPack["doors"][i]["type"] & tab & sPack["doors"][i]["to"] & tab & sPack["doors"][i]["note"] & return after tOut
+   end repeat
+   put char 1 to -2 of tOut into field "PackDoors" of stack tS
+   put sCheck into field "PackCheck" of stack tS
+   unlock screen
+end Ed.PackFill
+
+-- every button and list of the pack window arrives here
+on Ed.PackDo pWhat
+   local tS, n, tAsk, tLine, tOld
+   set the defaultStack to "BitEditor"
+   put "BitEditorPack" into tS
+   if there is a stack tS then put the hilitedLine of field "PackMaps" of stack tS into n
+   if pWhat is not among the items of "Open Pack...,New Pack...,Check,Jump" and sPackPath is empty then
+      Ed.Status "open a pack first (File > Open Pack...)"
+      exit Ed.PackDo
+   end if
+   switch pWhat
+      case "Select"
+         if n is a number then put n into sPackSel
+         break
+      case "Open"
+         if n is a number then Ed.PackOpenMap n
+         break
+      case "Up"
+         Ed.PackMove sPackSel, -1
+         break
+      case "Down"
+         Ed.PackMove sPackSel, 1
+         break
+      case "Place..."
+         if sPackSel < 1 then exit Ed.PackDo
+         ask "Place, base (hu), col,row of" && sPack["maps"][sPackSel]["id"] & "'s cell 1,1 on the place's first map:" with \
+               sPack["maps"][sPackSel]["place"] && sPack["maps"][sPackSel]["base"] && sPack["maps"][sPackSel]["at"]
+         if it is empty or the result is "Cancel" then exit Ed.PackDo
+         Ed.PackPlace sPackSel, word 1 of it, word 2 of it, word 3 of it
+         break
+      case "Add..."
+         answer file "Add a map from the pack's folder" with Ed.PackFolder() with type "Cellmap|cellmap|"
+         if it is empty then exit Ed.PackDo
+         put it into tLine
+         set the itemDel to "/"
+         put item -1 of tLine into tAsk
+         set the itemDel to comma
+         if tLine is not (Ed.PackFolder() & "/" & tAsk) then
+            Ed.Status "a pack's maps live in its own folder:" && Ed.PackFolder()
+            exit Ed.PackDo
+         end if
+         replace ".cellmap" with empty in tAsk
+         ask "Its id in the pack (a short word):" with tAsk
+         if it is empty or the result is "Cancel" then exit Ed.PackDo
+         Ed.PackAdd tLine, it
+         break
+      case "Remove"
+         Ed.PackRemove sPackSel
+         break
+      case "Start"
+         if sPackSel < 1 then exit Ed.PackDo
+         put sPack["maps"][sPackSel]["id"] into sPack["meta"]["start"]
+         put true into sPackDirty
+         Ed.PackFill
+         break
+      case "Door to..."
+         put sPackOpen & ":" & sLastCell into tLine
+         if sPackOpen is empty or sLastCell is empty then put "map:col,row" into tLine
+         ask "A door: from type to note (from and to are map:col,row; type a free word: door, ladder, stairs, lift, teleport, hole):" with \
+               tLine && "door" && "map:col,row"
+         if it is empty or the result is "Cancel" then exit Ed.PackDo
+         Ed.PackAddDoor word 1 of it, word 2 of it, word 3 of it, word 4 to -1 of it
+         break
+      case "Remove Door"
+         if there is a stack tS then put the hilitedLine of field "PackDoors" of stack tS into n
+         Ed.PackRemoveDoor n
+         break
+      case "Check"
+         Ed.Check
+         break
+      case "Jump"
+         if there is a stack tS then Ed.CheckJump the hilitedLine of field "PackCheck" of stack tS
+         break
+      case "Open Pack..."
+         Ed.FileMenu "Open Pack..."
+         break
+      case "New Pack..."
+         Ed.NewPackAsk
+         break
+      case "Save Pack"
+         Ed.PackSave
+         break
+   end switch
+end Ed.PackDo
+
+-- swap map n with its neighbour (pBy -1 up, 1 down); the order is the order of the file's lines
+on Ed.PackMove n, pBy
+   local tA
+   if n < 1 or n + pBy < 1 or n + pBy > sPack["count"] then exit Ed.PackMove
+   put sPack["maps"][n] into tA
+   put sPack["maps"][n + pBy] into sPack["maps"][n]
+   put tA into sPack["maps"][n + pBy]
+   put n + pBy into sPackSel
+   put true into sPackDirty
+   Ed.PackFill
+   Ed.Status "moved" && tA["id"] && "(a place's FIRST map is the one the others are placed on)"
+end Ed.PackMove
+
+on Ed.PackPlace n, pPlace, pBase, pAt
+   if n < 1 or n > sPack["count"] then exit Ed.PackPlace
+   if pPlace is empty then put "main" into pPlace
+   if pBase is not a number then put 0 into pBase
+   if not (item 1 of pAt is an integer and item 2 of pAt is an integer) then put "1,1" into pAt
+   put pPlace into sPack["maps"][n]["place"]
+   put pBase into sPack["maps"][n]["base"]
+   put pAt into sPack["maps"][n]["at"]
+   if sPack["maps"][n]["map"] is an array then put pBase into sPack["maps"][n]["map"]["meta"]["base"]
+   put true into sPackDirty
+   Ed.PackFill
+end Ed.PackPlace
+
+-- a map file of the pack's folder joins the pack, last, in place main at base 0
+on Ed.PackAdd pPath, pId
+   local n, tMap, tFile
+   replace space with "_" in pId
+   if CellMap.PackIndex(sPack, pId) > 0 then
+      Ed.Status "the pack already has a map" && pId
+      exit Ed.PackAdd
+   end if
+   set the itemDel to "/"
+   put item -1 of pPath into tFile
+   set the itemDel to comma
+   put sPack["count"] + 1 into n
+   put pId into sPack["maps"][n]["id"]
+   put tFile into sPack["maps"][n]["file"]
+   put "main" into sPack["maps"][n]["place"]
+   put 0 into sPack["maps"][n]["base"]
+   put "1,1" into sPack["maps"][n]["at"]
+   put CellMap.Read(pPath) into tMap
+   CellMap.Upgrade tMap
+   put 0 into tMap["meta"]["base"]
+   put tMap into sPack["maps"][n]["map"]
+   put n into sPack["count"]
+   put n into sPackSel
+   put true into sPackDirty
+   Ed.PackFill
+end Ed.PackAdd
+
+on Ed.PackRemove n
+   local i
+   if n < 1 or n > sPack["count"] then exit Ed.PackRemove
+   repeat with i = n to sPack["count"] - 1
+      put sPack["maps"][i + 1] into sPack["maps"][i]
+   end repeat
+   delete variable sPack["maps"][sPack["count"]]
+   subtract 1 from sPack["count"]
+   put min(n, sPack["count"]) into sPackSel
+   put true into sPackDirty
+   Ed.PackFill
+   Ed.Status "removed from the pack (the file stays; doors to it are reported by Check)"
+end Ed.PackRemove
+
+on Ed.PackAddDoor pFrom, pType, pTo, pNote
+   local n
+   set the itemDel to ":"
+   if CellMap.PackIndex(sPack, item 1 of pFrom) < 1 or CellMap.PackIndex(sPack, item 1 of pTo) < 1 then
+      set the itemDel to comma
+      Ed.Status "a door goes from map:col,row to map:col,row of maps in this pack"
+      exit Ed.PackAddDoor
+   end if
+   set the itemDel to comma
+   if pType is empty then put "door" into pType
+   put CellMap.Count(sPack["doors"]) + 1 into n
+   put pFrom into sPack["doors"][n]["from"]
+   put pType into sPack["doors"][n]["type"]
+   put pTo into sPack["doors"][n]["to"]
+   put pNote into sPack["doors"][n]["note"]
+   put true into sPackDirty
+   Ed.PackFill
+end Ed.PackAddDoor
+
+on Ed.PackRemoveDoor n
+   local i, tCount
+   put CellMap.Count(sPack["doors"]) into tCount
+   if n is not a number or n < 1 or n > tCount then exit Ed.PackRemoveDoor
+   repeat with i = n to tCount - 1
+      put sPack["doors"][i + 1] into sPack["doors"][i]
+   end repeat
+   delete variable sPack["doors"][tCount]
+   put true into sPackDirty
+   Ed.PackFill
+end Ed.PackRemoveDoor
+
+-- the E12 checker: the whole pack when the map being painted is one of its maps (that map as it is now,
+-- saved or not), else the open map alone
+on Ed.Check
+   local tPack, n, tOut
+   if sPackOpen is not empty then
+      put sPack into tPack
+      put CellMap.PackIndex(tPack, sPackOpen) into n
+      if n > 0 then
+         put sMap into tPack["maps"][n]["map"]
+         put tPack["maps"][n]["base"] into tPack["maps"][n]["map"]["meta"]["base"]
+      end if
+      put CellMap.CheckPack(tPack, sTags) into tOut
+   else
+      put CellMap.Check(sMap, sTags) into tOut
+   end if
+   if char -1 of tOut is return then delete char -1 of tOut
+   put tOut into sCheck
+   Ed.PackPanel
+   if tOut is empty then
+      Ed.Status "check: no problems"
+   else
+      Ed.Status "check:" && the number of lines of tOut && "lines (click one in the Pack window to see its cell)"
+   end if
+end Ed.Check
+
+-- line n of the checker: open its map when it is another of the pack's, then mark the cell
+on Ed.CheckJump n
+   local tLine, tId, tCell, i
+   if n is not a number then exit Ed.CheckJump
+   put line n of sCheck into tLine
+   set the itemDel to tab
+   put item 2 of tLine into tId
+   put item 3 of tLine into tCell
+   set the itemDel to comma
+   if sPackPath is not empty and tId is not empty and tId is not sPackOpen then
+      put CellMap.PackIndex(sPack, tId) into i
+      if i > 0 then Ed.PackOpenMap i
+   end if
+   if item 1 of tCell is an integer and item 2 of tCell is an integer then
+      Ed.MarkCell item 1 of tCell, item 2 of tCell
+   end if
+   set the itemDel to tab
+   Ed.Status item 1 of tLine & ":" && item 4 of tLine
+   set the itemDel to comma
+end Ed.CheckJump
+
+-- a frame round one cell of the 2D map (and the 3D cursor there) until the next click on the map
+on Ed.MarkCell pC, pR
+   local tL, tT
+   if there is not a graphic "MarkBox" or sPx is not a number then exit Ed.MarkCell
+   put the left of image "Map2D" + (pC - 1) * sPx into tL
+   put the top of image "Map2D" + (pR - 1) * sPx into tT
+   set the rect of graphic "MarkBox" to tL - 2, tT - 2, tL + sPx + 2, tT + sPx + 2
+   set the visible of graphic "MarkBox" to true
+   put pC & comma & pR into sHover
+   Ed.ShowHover
+   Ed.Draw3DCursor
+end Ed.MarkCell
+
+function Ed.PackState
+   return sPack["meta"]["name"] & "|" & sPack["count"] & "|" & sPackSel & "|" & sPackOpen & "|" & sPackDirty & "|" & CellMap.Count(sPack["doors"])
+end Ed.PackState
 
 -------------------------------------------------------------------- right: the 3D preview
 
@@ -2200,6 +2715,20 @@ on Ed.FileMenu pItem
          break
       case "Save Font"
          Ed.SaveFont
+         break
+      case "Open Pack..."
+         answer file "Open a map pack (.cellpack)" with (sDir & "/maps") with type "Map pack|cellpack|"
+         if it is not empty then Ed.OpenPack it
+         break
+      case "New Pack..."
+         Ed.NewPackAsk
+         break
+      case "Pack Window"
+         Ed.PackPanel
+         break
+      case "Check Map (E12)"
+         Ed.PackPanel
+         Ed.Check
          break
       case "Export Tags As Text"
          put sDir & "/maps/" & sMap["meta"]["name"] & "_tags.txt" into tFile

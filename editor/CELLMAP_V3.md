@@ -171,7 +171,7 @@ tests give the same numbers as before (segments, walks and picks, both engines).
    had just fallen from and every move was refused. Now a part of the rim that is already in a
    wall may stay in it; it still cannot ENTER one.
 
-## 6. What the BitEditor needs (the Slope rows built 19 Nov: section 8)
+## 6. What the BitEditor needs (built 19 Nov except "Line rooms up": section 8)
 
 | Need | How |
 |---|---|
@@ -219,11 +219,11 @@ tests give the same numbers as before (segments, walks and picks, both engines).
 | `Pick` (painting in 3D) on slopes and packs | not built: it sees the flat cell of one map |
 | The checker (E12) | done 18 Nov (Opus): `CellMap.Check` / `CheckPack`, `check()` / `check_pack()`: one line a problem (kind, map, col,row, words): slope-trap, slope-all, slope-empty, slope-roof, step (only where it cuts an area off), hole, door, link, start, unreachable (one line an area), and the pack reader's problems. Reachability is the walker's rules cell by cell (ground only, not tower tops). Same lines in Python and xTalk on every map in `maps/` (`tests/py_check_test.py` 22 checks, `tests/lc_check_test.txt` 26, both headless engines). Real findings: Amazing Couple 1-3 have 36 cells behind the gate at 10,10 that no link opens; the cropped wizard pool keeps two links that point off the crop; the 12 mazes have no @ |
 | BitEditor: Slope tool | done 19 Nov (Opus, branch `cellmap-v3-slope-tool`): Heights tab, a **Slope** tool beside Floor / Ceiling. A grey swatch is the rise; a click near a cell's edge lifts that edge, near a corner (its third both ways) that corner; a drag lifts the same part of every cell it crosses; grey 0 flattens; right-click picks a cell's four rises up and stamps them (a swatch ends the stamp). All four lifted is tidied into the floor. An arrow points uphill (brighter = higher, red = steep), a dot in each lifted corner; the hover line gives the rises. One undo a stroke. A cell with floor 0 is refused. `tests/lc_slope_tool_test.txt` (21 checks, both headless engines). Not done: painting a slope in the 3D preview picks the part last used in the 2D map (`Pick` gives no point inside the cell) |
-| BitEditor: pack panel | not built (section 6) |
+| BitEditor: pack window and the checker's list | done 19 Nov (Opus, same branch): File > Open Pack... / New Pack... (holds the open map, written beside it) / Pack Window / Check Map (E12). A floating window "BitEditor Pack": the maps (id, place, base, col,row, file; `*` = the one being painted), double-click opens one (asks to save unsaved changes), Up / Down order them, Place... sets place base col,row, Add... (a map of the pack's folder), Remove, Start; the doors, Door to... (from the last cell clicked) and Remove Door; Save Pack. Check runs `CellMap.CheckPack` on the pack with the open map as it is now (unsaved too), or `CellMap.Check` on a map outside the pack; a click on a line opens its map and frames the cell. `tests/lc_pack_panel_test.txt` (21 checks, both headless engines). Not built: the map below drawn dimly under the one being painted ("line rooms up"), choosing a door's far cell by clicking |
 | A game using a pack | `E13_WalkTheMap` (LIB_EDITOR, branch cellmap-v3-followups): M cycles to `two_rooms`, drawn with PackSegments, walked with PackWalk, E climbs the ladder (PackDoors) |
 | Speed of `PackWalk` in a real game | not measured (it asks each map of the place at up to nine points a step) |
 | `LIB_EDITOR/tests/e13_test.sh` against this library | not run here (it starts the windowed standalone) |
 
 For Opus, in order: ~~(1) segments for slopes, then `CellMap.PackSegments`; (2) E13 walking
 `maps/two_rooms`~~ (17 Nov); (3) the BitEditor's Slope tool; (4) the pack panel; ~~(5) the checker~~
-(18 Nov; the BitEditor still needs its list: click a line, jump to the cell); (3) the Slope tool done 19 Nov.
+(18 Nov; the BitEditor still needs its list: click a line, jump to the cell); (3) the Slope tool and (4) the pack window done 19 Nov; left: rooms lined up dimly, slopes in `LevelBoxes` and `Pick`.

@@ -54,6 +54,10 @@ Version 1 files (below) still read; the BitEditor opens them as version 2 and sa
   cell's edge to lift that edge, near a corner to lift that corner (a drag does the same part of
   every cell); grey 0 flattens; right-click picks a cell's rises up and stamps them. An arrow points
   uphill (brighter = higher, red = too steep to walk up). `CELLMAP_V3.md` sections 2, 6 and 8.
+- **Map packs** (File > Open Pack... / New Pack... / Pack Window / Check Map (E12); 19 Nov 2026): a
+  floating Pack window lists the level's maps (double-click paints one; Up / Down; Place...; Add...),
+  its doors (Door to... from the last cell clicked) and the checker's lines (a click frames the
+  cell). `CELLMAP_V3.md` sections 4, 6 and 8.
 - **Extrude: Glyph Shape** (Mesh menu; saved with the map as `extrude glyph`): a height raises
   the cell's glyph, not the whole cell. `CELLMAP_V2.md` section 4b.
 - **Painting in the 3D preview.** The left button paints there with the same brush as on the

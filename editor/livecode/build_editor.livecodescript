@@ -29,7 +29,7 @@ command Build.Editor pDir
    set the resizable of stack tS to false
    set the defaultStack to tS
    Theme.MenuBar tS, 0, 0, kW, 30          -- menus sit on a light strip (the menu rule)
-   put "File" & tab & "New Map...|Open Map...|-|Save Map|Save Map As...|-|Save Font|Export Tags As Text" & return & \
+   put "File" & tab & "New Map...|Open Map...|-|Save Map|Save Map As...|-|Open Pack...|New Pack...|Pack Window|Check Map (E12)|-|Save Font|Export Tags As Text" & return & \
          "Edit" & tab & "Undo (Ctrl+Z)|Redo (Ctrl+Y)|-|Export Change History" & return & \
          "Bit" & tab & "Mirror H While Drawing|Mirror V While Drawing|Mirror H Now (left onto right)|Mirror V Now (top onto bottom)|-|Flip Horizontal|Flip Vertical|Rotate 90 cw|Rotate 90 ccw|-|Shift Left|Shift Right|Shift Up|Shift Down|-|Invert|Clear|Fill" & return & \
          "Grid" & tab & "Size (columns, rows)...|Cell Size (engine units)...|Wall Height (engine units)...|-|Font..." & return & \
@@ -158,6 +158,13 @@ command Build.Editor pDir
    set the lineSize of it to 1
    set the foregroundColor of it to Theme.Get("accent")
    set the uThemeSkip of it to true
+   create graphic "MarkBox"                  -- the cell a checker line points at (pack window)
+   set the style of it to "rectangle"
+   set the filled of it to false
+   set the lineSize of it to 2
+   set the foregroundColor of it to "255,60,200"
+   set the uThemeSkip of it to true
+   set the visible of it to false
    set the visible of it to false
 
    ---------------------------------------------------------------- right: the 3D preview
