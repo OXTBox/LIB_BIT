@@ -18,10 +18,11 @@
 ##           Cells    the glyphs on their property colours
 ##           Heights  the glyphs in floor colour on ceiling colour (Ceiling tool flips);
 ##                    grey / red / green / blue swatches paint the five height layers
-##                    Slope tool (cellmap v3): a grey is the rise; click near a cell's EDGE
-##                    to lift that edge, near a CORNER to lift that corner; grey 0 flattens;
-##                    right-click picks a cell's four rises up and stamps them. An arrow in
-##                    a sloped cell points uphill (brighter = higher), red when too steep.
+##           Slope    (cellmap v3; its own tab since the owner's notes of 19 Nov 2026) a compass
+##                    says which way is uphill (Auto: the way you drag). Ramp: drag a box, it
+##                    becomes ONE smooth slope (Join: from the floor before it to the floor
+##                    after it); One Cell: lift each cell's uphill edge or corner by the swatch;
+##                    Flatten. An arrow in a sloped cell points uphill, red when too steep.
 ##         What a click paints: Heights tab = a height; otherwise the left tab decides.
 ## RIGHT   the 3D preview: the level's lines exactly as CellMap.LevelSegments gives them to
 ##         Vibecode3D (LIB_EDITOR E13), redrawn at every change. The cell under the mouse (in
@@ -48,7 +49,8 @@ local sDir, sMap, sMapPath, sTags, sFont, sFontPath
 local sCode, sTag, sLeft, sTab, sPropHeight, sExtrude
 local sDirtyMap, sDirtyFont, sBoardPaint, sPx, sGhostOn, sHover
 local sHTool, sHLayer, sHValue, sHBlocks, sCache, sHFrom
-local sSlopePart, sSlopeStamp
+local sSlopePart, sSlopeStamp, sSMode, sSDir, sSValue, sSJoin, sRampFrom, sRampId
+local sHide, sShow, sVis, sVisAt
 local sPack, sPackPath, sPackSel, sPackOpen, sPackDirty, sLastCell, sCheck
 local sSegs, sSegCount, sYaw, sPitch, sDist, sRelief3D, sDrag
 local sMirrorH, sMirrorV
@@ -94,6 +96,12 @@ on Ed.Init
    put 0 into sHFrom                         -- the From Floor (1) / From Ceiling (2) brush
    put "e" into sSlopePart                   -- the Slope tool: the edge or corner a click lifts
    put empty into sSlopeStamp                -- "nw,ne,se,sw" picked up from a cell (right-click)
+   put "ramp" into sSMode                    -- the Slope tab: ramp, cell, flatten (never "one": a constant)
+   put "auto" into sSDir                     -- uphill: auto, n, ne, e, se, s, sw, w, nw
+   put 30 into sSValue
+   put true into sSJoin
+   put "off" into sHide                      -- the 3D preview: off, lines (Scene menu)
+   put empty into sShow                      -- classes switched off: sShow[class] is false
    put 100 into sHValue
    put false into sHBlocks
    put true into sRelief3D
@@ -559,6 +567,7 @@ on Ed.MenuMarks
    Ed.MenuMark "Mesh", "Extrude: Glyph Shape", (sMap["meta"]["extrude"] is "glyph")
    if there is a button "HExtrude" then set the hilite of button "HExtrude" to (sMap["meta"]["extrude"] is "glyph")
    Ed.HTopShow
+   Ed.SceneMarks
    if there is a graphic "MirrorHLine" then
       set the visible of graphic "MirrorHLine" to (sMirrorH is true)
       set the visible of graphic "MirrorVLine" to (sMirrorV is true)
@@ -1211,6 +1220,10 @@ end edLine
 function Ed.CellColours pC, pR
    local tFloor, tCeil, tBack
    switch sTab
+      case "Slope"
+         put Ed.FloorColour(sMap["floor"][pR][pC], sMap["red"][pR][pC]) into tFloor
+         put Ed.CeilColour(sMap["ceiling"][pR][pC], sMap["green"][pR][pC], sMap["blue"][pR][pC]) into tCeil
+         return tFloor & "|" & tCeil
       case "Heights"
          put Ed.FloorColour(sMap["floor"][pR][pC], sMap["red"][pR][pC]) into tFloor
          put Ed.CeilColour(sMap["ceiling"][pR][pC], sMap["green"][pR][pC], sMap["blue"][pR][pC]) into tCeil
@@ -1232,7 +1245,7 @@ on Ed.DrawMap
    put sMap["meta"]["cols"] into tCols
    put sMap["meta"]["rows"] into tRows
    put max(4, min(kMapW div tCols, kMapH div tRows, 40)) into sPx
-   put (sHBlocks and sTab is "Heights") into tBlocks
+   put (sHBlocks and (sTab is "Heights" or sTab is "Slope")) into tBlocks
    set the itemDel to "|"
    put 1 into r
    repeat while r <= tRows
@@ -1241,7 +1254,7 @@ on Ed.DrawMap
          put Ed.CellColours(c, r) into tPair
          put edCellLines(sMap["design"][r][c], item 1 of tPair, item 2 of tPair, tBlocks) into tLine[c]
          if sTab is "Heights" and sMap["from"][r][c] > 0 then put edFromMarks(tLine[c], sMap["from"][r][c]) into tLine[c]
-         if sTab is "Heights" and sMap["slope"][r][c] is not empty then put edSlopeMarks(tLine[c], c, r) into tLine[c]
+         if (sTab is "Heights" or sTab is "Slope") and sMap["slope"][r][c] is not empty then put edSlopeMarks(tLine[c], c, r) into tLine[c]
          add 1 to c
       end repeat
       put 1 into y
@@ -1274,13 +1287,15 @@ end Ed.Changed
 
 -- 1bit, Cells or Heights: three views of the same map
 on Ed.MapTab pTab
-   if pTab is not among the items of "1bit,Cells,Heights" then put "1bit" into pTab
+   if pTab is not among the items of "1bit,Cells,Heights,Slope" then put "1bit" into pTab
    put pTab into sTab
    lock screen
    Ed.TabShow "Map", pTab
    set the visible of group "HeightTools" to (pTab is "Heights")
+   if there is a group "SlopeTools" then set the visible of group "SlopeTools" to (pTab is "Slope")
    Ed.DrawMap
    Ed.HShowTool
+   Ed.SShowTool
    unlock screen
    Ed.GhostMove
    Ed.ShowWhat
@@ -1289,6 +1304,7 @@ end Ed.MapTab
 -- what a click on the map does right now, in words: the first line over the map
 function Ed.What
    if sTab is "Heights" then return "HEIGHT:" && Ed.HPainting()
+   if sTab is "Slope" then return "SLOPE:" && Ed.SPainting()
    if sLeft is "Properties" then
       if sPropHeight then return "PROPERTY:" && Ed.CharShown(sTag) && sTags[sTag]["name"] & ", with its height (" & Ed.PropFloor() & ")"
       return "PROPERTY:" && Ed.CharShown(sTag) && sTags[sTag]["name"] & " (heights untouched)"
@@ -1385,7 +1401,7 @@ end Ed.PartWords
 
 -- the layer a height click changes: a grey goes to the tool's layer, the colours to their own
 function Ed.HTarget
-   if sHLayer is "grey" then return sHTool             -- floor, ceiling or slope
+   if sHLayer is "grey" then return sHTool
    return sHLayer
 end Ed.HTarget
 
@@ -1401,7 +1417,17 @@ on Ed.MapDown pButton
       Ed.PickUp tC, tR
       exit Ed.MapDown
    end if
-   if sTab is "Heights" and Ed.HTarget() is "slope" then put Ed.MapPart() into sSlopePart
+   if sTab is "Slope" then
+      if sSMode is "ramp" then
+         Ed.RampBegin tCell
+         exit Ed.MapDown
+      end if
+      if sSDir is "auto" then
+         put Ed.MapPart() into sSlopePart
+      else
+         put sSDir into sSlopePart
+      end if
+   end if
    Ed.StrokeBegin "map", "paint" && toLower(Ed.What())
    put tCell into sStrokeAt
    Ed.PaintCell tC, tR
@@ -1410,10 +1436,11 @@ end Ed.MapDown
 
 -- pick up what is in a cell, for the thing being painted
 on Ed.PickUp pC, pR
-   if sTab is "Heights" and Ed.HTarget() is "slope" then
+   if sTab is "Slope" then
       put CellMap.Slope(sMap, pC, pR) into sSlopeStamp
       if sSlopeStamp is empty then put "0,0,0,0" into sSlopeStamp
-      Ed.HShowTool
+      put "cell" into sSMode
+      Ed.SShowTool
    else if sTab is "Heights" then
       put sMap[Ed.HTarget()][pR][pC] + 0 into sHValue
       if sHLayer is "from" then put sHValue into sHFrom
@@ -1463,8 +1490,14 @@ end Ed.PaintAt
 -- one cell of a stroke: a height, a property or a glyph (see Ed.What)
 on Ed.PaintCell pC, pR
    local tChar
-   if sTab is "Heights" and Ed.HTarget() is "slope" then
-      Ed.SlopeCell pC, pR
+   if sTab is "Slope" then
+      if sSMode is "flatten" then
+         Ed.SetSlope pC, pR, empty
+      else if sSMode is "cell" then
+         Ed.SlopeCell pC, pR
+      else
+         Ed.Status "Ramp: drag a box on the 2D map (One Cell paints in 3D)"
+      end if
    else if sTab is "Heights" then
       Ed.SetCell Ed.HTarget(), pC, pR, sHValue
    else if sLeft is "Properties" then
@@ -1482,6 +1515,249 @@ on Ed.PaintCell pC, pR
    end if
 end Ed.PaintCell
 
+-------------------------------------------------------------------- the Slope tab (cellmap v3; owner's notes 19 Nov 2026)
+
+-- what a click does on the Slope tab, in words
+function Ed.SPainting
+   local tWay
+   if sSDir is "auto" then
+      put "the way you drag" into tWay
+   else
+      put toUpper(sSDir) into tWay
+   end if
+   switch sSMode
+      case "flatten"
+         return "Flatten (cells painted flat; their floor stays)"
+      case "cell"
+         if sSlopeStamp is not empty then return "One Cell: the copied slope nw,ne,se,sw" && sSlopeStamp && "(a swatch ends the copy)"
+         if sSValue <= 0 then return "One Cell, rise 0: flattens"
+         if sSDir is "auto" then return "One Cell: lift the edge or corner nearest the click by" && sSValue && "hu"
+         return "One Cell: lift the" && Ed.PartWords(sSDir) && "by" && sSValue && "hu"
+   end switch
+   if sSJoin then return "Ramp: drag a box; uphill" && tWay & ", from the floor before it to the floor after it (else by" && sSValue && "hu)"
+   return "Ramp: drag a box; uphill" && tWay & ", rising" && sSValue && "hu across it"
+end Ed.SPainting
+
+on Ed.SShowTool
+   local tD
+   if there is not a group "SlopeTools" then exit Ed.SShowTool
+   repeat for each item tD in "NW,N,NE,W,Auto,E,SW,S,SE"
+      set the hilite of button ("SDir" & tD) to (toLower(tD) is sSDir)
+   end repeat
+   set the hilite of button "SModeRamp" to (sSMode is "ramp")
+   set the hilite of button "SModeCell" to (sSMode is "cell")
+   set the hilite of button "SModeFlatten" to (sSMode is "flatten")
+   set the hilite of button "SJoin" to sSJoin
+   set the enabled of button "SJoin" to (sSMode is "ramp")
+   put Ed.SPainting() into field "SWords"
+   if there is a graphic ("ss_" & sSValue) and sSlopeStamp is empty then
+      set the rect of graphic "SSel" to the left of graphic ("ss_" & sSValue) - 1, 165, the right of graphic ("ss_" & sSValue) + 1, 182
+      set the visible of graphic "SSel" to true
+   else
+      set the visible of graphic "SSel" to false
+   end if
+end Ed.SShowTool
+
+on Ed.SDir pDir
+   if pDir is not among the items of "auto,n,ne,e,se,s,sw,w,nw" then exit Ed.SDir
+   put pDir into sSDir
+   Ed.SShowTool
+   Ed.ShowWhat
+end Ed.SDir
+
+on Ed.SMode pMode
+   if pMode is not among the items of "ramp,cell,flatten" then exit Ed.SMode
+   put pMode into sSMode
+   put empty into sSlopeStamp
+   Ed.SShowTool
+   Ed.ShowWhat
+end Ed.SMode
+
+on Ed.SJoin pOn
+   if pOn is empty then put not sSJoin into pOn
+   put (pOn is true) into sSJoin
+   Ed.SShowTool
+   Ed.ShowWhat
+end Ed.SJoin
+
+-- a rise swatch "ss_<value>"
+on Ed.SSwatch pName
+   set the itemDel to "_"
+   put item 2 of pName into sSValue
+   set the itemDel to comma
+   put empty into sSlopeStamp
+   Ed.SShowTool
+   Ed.ShowWhat
+end Ed.SSwatch
+
+-- "dx,dy" of an uphill word (east and south are +)
+function Ed.DirVector pDir
+   switch pDir
+      case "n"
+         return "0,-1"
+      case "ne"
+         return "1,-1"
+      case "e"
+         return "1,0"
+      case "se"
+         return "1,1"
+      case "s"
+         return "0,1"
+      case "sw"
+         return "-1,1"
+      case "w"
+         return "-1,0"
+      case "nw"
+         return "-1,-1"
+   end switch
+   return empty
+end Ed.DirVector
+
+-- Ramp: the press starts a box; it follows the mouse (framed) until the release paints it
+on Ed.RampBegin pCell
+   put pCell into sRampFrom
+   if sRampFrom is empty then put pCell into sRampFrom
+   put Ed.MapPart() into sSlopePart       -- a click with Auto: the edge or corner nearest it
+   add 1 to sRampId
+   Ed.RampTick sRampId
+end Ed.RampBegin
+
+on Ed.RampTick pId
+   local tCell, tL, tT
+   if pId is not sRampId or sRampFrom is empty then exit Ed.RampTick
+   put Ed.MapCell() into tCell
+   if tCell is empty then put sStrokeAt into tCell
+   if tCell is empty then put sRampFrom into tCell
+   put tCell into sStrokeAt
+   if the mouse is up then
+      put sRampFrom into tL
+      put empty into sRampFrom
+      put empty into sStrokeAt
+      if there is a graphic "MarkBox" then set the visible of graphic "MarkBox" to false
+      Ed.Ramp tL, tCell
+      exit Ed.RampTick
+   end if
+   if there is a graphic "MarkBox" and sPx is a number then
+      put the left of image "Map2D" + (min(item 1 of sRampFrom, item 1 of tCell) - 1) * sPx into tL
+      put the top of image "Map2D" + (min(item 2 of sRampFrom, item 2 of tCell) - 1) * sPx into tT
+      set the rect of graphic "MarkBox" to tL - 2, tT - 2, \
+            the left of image "Map2D" + max(item 1 of sRampFrom, item 1 of tCell) * sPx + 2, the top of image "Map2D" + max(item 2 of sRampFrom, item 2 of tCell) * sPx + 2
+      set the visible of graphic "MarkBox" to true
+   end if
+   send "Ed.RampTick" && pId to me in 30 milliseconds
+end Ed.RampTick
+
+-- a box of cells from pFrom to pTo ("col,row" each) becomes ONE slope rising the compass way (Auto: from
+-- pFrom towards pTo). Every cell continues where its neighbour ends: corner heights are one plane over the
+-- box; each cell gets floor = base + its lowest corner and rises = its corners above that. Base: the floor
+-- just before the box (else the box's own low cell); the climb: with Join the floor just after the box
+-- minus the base, else (or when that is not higher) the swatch. One undo.
+on Ed.Ramp pFrom, pTo
+   local c0, c1, r0, r1, w, h, tV, dx, dy, dc, dr, pMin, pMax, tP, u, v, cL, rL, cH, rH, tBase, tH, tHigh
+   local c, r, tK, tNW, tNE, tSE, tSW, m, tMid, n
+   put min(item 1 of pFrom, item 1 of pTo) into c0
+   put max(item 1 of pFrom, item 1 of pTo) into c1
+   put min(item 2 of pFrom, item 2 of pTo) into r0
+   put max(item 2 of pFrom, item 2 of pTo) into r1
+   put max(1, c0) into c0
+   put max(1, r0) into r0
+   put min(sMap["meta"]["cols"], c1) into c1
+   put min(sMap["meta"]["rows"], r1) into r1
+   if c0 > c1 or r0 > r1 then exit Ed.Ramp
+   put c1 - c0 + 1 into w
+   put r1 - r0 + 1 into h
+   if sSDir is "auto" then
+      put item 1 of pTo - item 1 of pFrom into dc
+      put item 2 of pTo - item 2 of pFrom into dr
+      if dc is 0 and dr is 0 then
+         put Ed.DirVector(sSlopePart) into tV          -- a click: the edge or corner nearest it
+      else if abs(dc) >= 2 * abs(dr) then
+         put edSign(dc) & ",0" into tV
+      else if abs(dr) >= 2 * abs(dc) then
+         put "0," & edSign(dr) into tV
+      else
+         put edSign(dc) & comma & edSign(dr) into tV
+      end if
+   else
+      put Ed.DirVector(sSDir) into tV
+   end if
+   put item 1 of tV into dx
+   put item 2 of tV into dy
+   if dx is 0 and dy is 0 then exit Ed.Ramp
+   -- the plane: p = u * dx + v * dy over the box's grid corners (u 0..w, v 0..h)
+   put min(0, w * dx) + min(0, h * dy) into pMin
+   put max(0, w * dx) + max(0, h * dy) into pMax
+   -- the low and high sides, and the cells just outside them
+   put (c0 + c1) div 2 into cL
+   put cL into cH
+   if dx > 0 then
+      put c0 into cL
+      put c1 into cH
+   else if dx < 0 then
+      put c1 into cL
+      put c0 into cH
+   end if
+   put (r0 + r1) div 2 into rL
+   put rL into rH
+   if dy > 0 then
+      put r0 into rL
+      put r1 into rH
+   else if dy < 0 then
+      put r1 into rL
+      put r0 into rH
+   end if
+   put Ed.FloorAt(cL - dx, rL - dy) into tBase
+   if tBase <= 0 then put Ed.FloorAt(cL, rL) into tBase
+   if tBase <= 0 then put 1 into tBase
+   put sSValue into tH
+   if sSJoin then
+      put Ed.FloorAt(cH + dx, rH + dy) into tHigh
+      if tHigh > tBase then put tHigh - tBase into tH
+   end if
+   put min(tH, 255 - tBase) into tH
+   if tH <= 0 then
+      Ed.Status "ramp: nothing to climb (pick a rise swatch, or a higher floor after the box)"
+      exit Ed.Ramp
+   end if
+   Ed.StrokeBegin "call", "ramp"
+   repeat with r = r0 to r1
+      repeat with c = c0 to c1
+         put c - c0 into u
+         put r - r0 into v
+         put round(tH * ((u * dx + v * dy) - pMin) / (pMax - pMin)) into tNW
+         put round(tH * (((u + 1) * dx + v * dy) - pMin) / (pMax - pMin)) into tNE
+         put round(tH * (((u + 1) * dx + (v + 1) * dy) - pMin) / (pMax - pMin)) into tSE
+         put round(tH * ((u * dx + (v + 1) * dy) - pMin) / (pMax - pMin)) into tSW
+         put min(tNW, tNE, tSE, tSW) into m
+         Ed.SetCell "floor", c, r, tBase + m
+         Ed.SetCell "red", c, r, 0                     -- a pit under a ramp would break it
+         Ed.SetSlope c, r, (tNW - m) & comma & (tNE - m) & comma & (tSE - m) & comma & (tSW - m)
+      end repeat
+   end repeat
+   Ed.StrokeEnd
+   Ed.Status "ramp: cols" && c0 & "-" & c1 && "rows" && r0 & "-" & r1 & ", uphill" && Ed.DirWord(dx, dy) & ", floor" && tBase && "to" && tBase + tH && "(Ctrl+Z undoes it)"
+end Ed.Ramp
+
+private function edSign pN
+   if pN > 0 then return 1
+   if pN < 0 then return -1
+   return 0
+end edSign
+
+function Ed.FloorAt pC, pR
+   if pC < 1 or pR < 1 or pC > sMap["meta"]["cols"] or pR > sMap["meta"]["rows"] then return 0
+   return sMap["floor"][pR][pC] - sMap["red"][pR][pC]
+end Ed.FloorAt
+
+function Ed.DirWord pDX, pDY
+   local tOut
+   if pDY < 0 then put "N" into tOut
+   if pDY > 0 then put "S" into tOut
+   if pDX > 0 then put "E" after tOut
+   if pDX < 0 then put "W" after tOut
+   return tOut
+end Ed.DirWord
+
 -- the Slope tool on one cell (CELLMAP_V3.md 6): the picked-up rises, or the brush's rise on the part
 -- (edge or corner) chosen where the stroke began; grey 0 flattens. Kept tidy: when all four corners
 -- end up lifted they are lowered and the floor raised by the same amount
@@ -1494,13 +1770,13 @@ on Ed.SlopeCell pC, pR
    end if
    if sSlopeStamp is not empty then
       put sSlopeStamp into tS
-   else if sHValue <= 0 then
+   else if sSValue <= 0 then
       put "0,0,0,0" into tS
    else
       put CellMap.Slope(sMap, pC, pR) into tS
       if tS is empty then put "0,0,0,0" into tS
       repeat for each item i in Ed.PartCorners(sSlopePart)
-         put min(255, sHValue) into item i of tS
+         put min(255, sSValue) into item i of tS
       end repeat
    end if
    put min(tS) into tLow
@@ -1588,11 +1864,6 @@ on Ed.HTool pTool
       put not sHBlocks into sHBlocks
    else
       put pTool into sHTool
-      put empty into sSlopeStamp
-      if pTool is "slope" and sHLayer is not "grey" then
-         put "grey" into sHLayer
-         put 30 into sHValue
-      end if
    end if
    Ed.DrawMap
    Ed.HShowTool
@@ -1603,11 +1874,6 @@ end Ed.HTool
 function Ed.HPainting
    local tWhat
    if sHLayer is "from" then return Ed.HFromWords(sHValue)
-   if sHLayer is "grey" and sHTool is "slope" then
-      if sSlopeStamp is not empty then return "slope: the picked-up rises nw,ne,se,sw" && sSlopeStamp && "(a grey swatch ends the stamp)"
-      if sHValue <= 0 then return "slope 0: flattens the cell"
-      return "slope: lift the edge or corner nearest the click by" && sHValue && "hu (last:" && Ed.PartWords(sSlopePart) & ")"
-   end if
    if sHLayer is "grey" then
       put sHTool && sHValue into tWhat
       if sHValue is 0 then put " (empty: nothing there)" after tWhat
@@ -1630,7 +1896,6 @@ on Ed.HShowTool
    if there is not a button "ToolFloor" then exit Ed.HShowTool
    set the hilite of button "ToolFloor" to (sHTool is "floor")
    set the hilite of button "ToolCeiling" to (sHTool is "ceiling")
-   if there is a button "ToolSlope" then set the hilite of button "ToolSlope" to (sHTool is "slope")
    set the hilite of button "ToolBlocks" to sHBlocks
    put "hs_" & sHLayer & "_" & sHValue into tName
    if sHLayer is "from" then
@@ -1734,7 +1999,6 @@ on Ed.HSwatch pName
    put item 2 of pName into sHLayer
    put item 3 of pName into sHValue
    set the itemDel to comma
-   put empty into sSlopeStamp
    Ed.HShowTool
    Ed.ShowWhat
    Ed.Status "heights:" && Ed.HPainting()
@@ -2262,6 +2526,7 @@ on Ed.Build3D
    put empty into sSegs
    if sRelief3D or sMap["meta"]["extrude"] is "glyph" then put sFont into tFontUsed
    put CellMap.LevelSegments(sMap, sTags, tFontUsed) into tSegs
+   put empty into sVis
    put the number of lines of tSegs into sSegCount
    repeat for each line tSeg in tSegs
       put CellMap.SegToEngine(sMap, tSeg) into tE
@@ -2289,7 +2554,7 @@ private function edProject pX, pY, pZ, pCY, pSY, pCP, pSP, pMidX, pMidY, pF
 end edProject
 
 on Ed.Draw3D
-   local tPair, tClass, tPts, tSeg, tA, tB, tCY, tSY, tCP, tSP, tMidX, tMidY, tF, tRect, tClasses
+   local tPair, tClass, tPts, tSeg, tA, tB, tCY, tSY, tCP, tSP, tMidX, tMidY, tF, tRect, tClasses, tLines, tHid
    if there is not a group "View3D" then exit Ed.Draw3D
    put the rect of graphic "ViewBack" into tRect
    put (item 1 of tRect + item 3 of tRect) div 2 into tMidX
@@ -2302,10 +2567,25 @@ on Ed.Draw3D
    put kColours into tClasses
    replace "|" with return in tClasses
    lock screen
+   if sHide is "lines" and sCamOn is not true then
+      if sVis is not an array or sVisAt is not (sYaw & comma & sPitch & comma & sDist & comma & sTX & comma & sTY & comma & sTZ) then
+         Ed.HideLines
+         put sYaw & comma & sPitch & comma & sDist & comma & sTX & comma & sTY & comma & sTZ into sVisAt
+      end if
+   end if
    repeat for each line tPair in tClasses
       put word 1 of tPair into tClass
       put empty into tPts
-      repeat for each line tSeg in sSegs[tClass]
+      if not Ed.Shown(tClass) then
+         set the points of graphic ("v_" & tClass) to empty
+         next repeat
+      end if
+      if sHide is "lines" and sCamOn is not true then
+         put sVis[tClass] into tLines
+      else
+         put sSegs[tClass] into tLines
+      end if
+      repeat for each line tSeg in tLines
          put edProject(item 1 of tSeg, item 2 of tSeg, item 3 of tSeg, tCY, tSY, tCP, tSP, tMidX, tMidY, tF) into tA
          if tA is empty then next repeat
          put edProject(item 4 of tSeg, item 5 of tSeg, item 6 of tSeg, tCY, tSY, tCP, tSP, tMidX, tMidY, tF) into tB
@@ -2316,10 +2596,11 @@ on Ed.Draw3D
    end repeat
    unlock screen
    Ed.Draw3DCursor
+   if sHide is "lines" then put ", hidden lines hidden" into tHid
    if sMap["meta"]["extrude"] is "glyph" then
-      put "3D  " & sSegCount && "lines, glyph shapes (Mesh menu)   LEFT: paint   RIGHT held: drag turns, WASD RF move   wheel: zoom" into field "ViewTitle"
+      put "3D  " & sSegCount & tHid && "lines, glyph shapes (Mesh menu)   LEFT: paint   RIGHT held: drag turns, WASD RF move   wheel: zoom" into field "ViewTitle"
    else
-      put "3D  " & sSegCount && "lines, whole cells (Mesh menu)   LEFT: paint   RIGHT held: drag turns, WASD RF move   wheel: zoom" into field "ViewTitle"
+      put "3D  " & sSegCount & tHid && "lines, whole cells (Mesh menu)   LEFT: paint   RIGHT held: drag turns, WASD RF move   wheel: zoom" into field "ViewTitle"
    end if
 end Ed.Draw3D
 
@@ -2434,6 +2715,7 @@ on Ed.CamEnd
    put false into sCamOn
    put empty into sDrag
    add 1 to sCamId
+   if sHide is "lines" then Ed.Draw3D          -- the view stopped: work out what is hidden
 end Ed.CamEnd
 
 -- every 30 ms while the right button is down: turn by the drag, move by the keys held
@@ -2536,6 +2818,7 @@ on rawKeyDown pKey
 end rawKeyDown
 
 on Ed.SceneMenu pItem
+   local tC
    switch pItem
       case "Reset View"
          Ed.ResetCamera
@@ -2557,6 +2840,20 @@ on Ed.SceneMenu pItem
          put not sRelief3D into sRelief3D
          Ed.Build3D
          break
+      case "Hiding: Off"
+         put "off" into sHide
+         Ed.SceneMarks
+         break
+      case "Hiding: Hidden Lines"
+         put "lines" into sHide
+         put empty into sVis
+         Ed.SceneMarks
+         break
+      case "Show: All"
+         put empty into sShow
+         put empty into sVis
+         Ed.SceneMarks
+         break
       case "Zoom In"
          put sDist * 0.8 into sDist
          break
@@ -2564,9 +2861,136 @@ on Ed.SceneMenu pItem
          put sDist * 1.25 into sDist
          break
    end switch
+   if pItem begins with "Show: " and pItem is not "Show: All" then
+      put toLower(word 2 of pItem) into tC
+      put not Ed.Shown(tC) into sShow[tC]
+      put empty into sVis
+      Ed.SceneMarks
+   end if
+   if pItem begins with "Zoom" or pItem begins with "Reset" or pItem begins with "Top" or pItem begins with "From" then put empty into sVis
    Ed.Draw3D
    Ed.Status "3D preview:" && pItem
 end Ed.SceneMenu
+
+-- check marks on the Scene menu's Hiding and Show items
+on Ed.SceneMarks
+   local tC
+   Ed.MenuMark "Scene", "Hiding: Off", (sHide is not "lines")
+   Ed.MenuMark "Scene", "Hiding: Hidden Lines", (sHide is "lines")
+   repeat for each item tC in "Floor,Wall,Pit,Water,Ceiling,Green,Sky,Relief"
+      Ed.MenuMark "Scene", "Show:" && tC, Ed.Shown(toLower(tC))
+   end repeat
+end Ed.SceneMarks
+
+-------------------------------------------------------------------- the 3D preview's hiding (Scene menu)
+-- Show: <class> switches one kind of line on or off (sShow[class] false = off); Hiding: Hidden Lines
+-- leaves out what a wall, floor, roof or block stands in front of, as seen from the camera. Each line
+-- is cut in three pieces; a piece is drawn when the sight line from its middle to the eye is clear
+-- (marched through the map in steps of a third of a cell). Worked out when the view stops moving.
+
+function Ed.Shown pClass
+   return sShow[pClass] is not false
+end Ed.Shown
+
+-- the eye in engine units (as Ed.ViewRay finds it)
+function Ed.Eye
+   local tCY, tSY, tCP, tSP, z1
+   put cos(sYaw) into tCY
+   put sin(sYaw) into tSY
+   put cos(sPitch) into tCP
+   put sin(sPitch) into tSP
+   put tCP * sDist into z1
+   return (sTX - z1 * tSY) & comma & (tSP * sDist + sTY) & comma & (z1 * tCY + sTZ)
+end Ed.Eye
+
+-- sVis[class]: the visible pieces of sSegs[class] from where the camera is now
+on Ed.HideLines
+   local tCell, tHU, tBase, tCols, tRows, tSolid, r, c, tC, tLine, tEye, ex, ey, ez, tPair, tClass, tSeg, k, t0, t1
+   local x, y, z, tOut, tStep, tTop, tVisPrev, ax, ay, az, bx, by2, bz, tA
+   put empty into sVis
+   if sMap["floor"] is not an array then exit Ed.HideLines
+   put sMap["meta"]["cell"] into tCell
+   put CellMap.HU(sMap) into tHU
+   put CellMap.Opt(sMap, "base") into tBase
+   put sMap["meta"]["cols"] into tCols
+   put sMap["meta"]["rows"] into tRows
+   put 0 into tTop
+   -- each cell's solid spans in engine y: "lo,hi" lines
+   repeat with r = 1 to tRows
+      repeat with c = 1 to tCols
+         put CellMap.Column(sMap, c, r) into tC
+         if tC is empty then next repeat
+         put "-99999," & ((item 1 of tC + tBase) * tHU) into tSolid[c, r]
+         if item 2 of tC is a number then put return & ((item 2 of tC + tBase) * tHU) & comma & ((max(item 3 of tC, item 2 of tC + 4) + tBase) * tHU) after tSolid[c, r]
+         repeat for each line tLine in CellMap.Blocks(tC)
+            put return & ((item 1 of tLine + tBase) * tHU) & comma & ((item 2 of tLine + tBase) * tHU) after tSolid[c, r]
+         end repeat
+         repeat for each line tLine in tSolid[c, r]
+            put max(tTop, item 2 of tLine) into tTop
+         end repeat
+      end repeat
+   end repeat
+   put Ed.Eye() into tEye
+   put item 1 of tEye into ex
+   put item 2 of tEye into ey
+   put item 3 of tEye into ez
+   put tCell / 3 into tStep
+   repeat for each key tClass in sSegs
+      if not Ed.Shown(tClass) then next repeat
+      put empty into tOut
+      repeat for each line tSeg in sSegs[tClass]
+         put item 1 of tSeg into ax
+         put item 2 of tSeg into ay
+         put item 3 of tSeg into az
+         put item 4 of tSeg into bx
+         put item 5 of tSeg into by2
+         put item 6 of tSeg into bz
+         put empty into tVisPrev                   -- where the run of visible pieces began
+         repeat with k = 0 to 3
+            put false into tA
+            if k < 3 then put edClear(ax + (bx - ax) * (k + 0.5) / 3, ay + (by2 - ay) * (k + 0.5) / 3, az + (bz - az) * (k + 0.5) / 3, \
+                  ex, ey, ez, tStep, tCell, tCols, tRows, tTop, tSolid) into tA
+            if tA and tVisPrev is empty then put k into tVisPrev
+            if not tA and tVisPrev is not empty then
+               put tVisPrev / 3 into t0
+               put k / 3 into t1
+               put (ax + (bx - ax) * t0) & comma & (ay + (by2 - ay) * t0) & comma & (az + (bz - az) * t0) & comma & \
+                     (ax + (bx - ax) * t1) & comma & (ay + (by2 - ay) * t1) & comma & (az + (bz - az) * t1) & return after tOut
+               put empty into tVisPrev
+            end if
+         end repeat
+      end repeat
+      put tOut into sVis[tClass]
+   end repeat
+end Ed.HideLines
+
+-- true when nothing solid stands between the point and the eye
+private function edClear pX, pY, pZ, pEX, pEY, pEZ, pStep, pCell, pCols, pRows, pTop, @pSolid
+   local dx, dy, dz, tLen, n, i, x, y, z, c, r, tLine, tF
+   put pEX - pX into dx
+   put pEY - pY into dy
+   put pEZ - pZ into dz
+   put sqrt(dx * dx + dy * dy + dz * dz) into tLen
+   if tLen < pStep then return true
+   put trunc(tLen / pStep) into n
+   repeat with i = 1 to n
+      put i * pStep / tLen into tF
+      put pY + dy * tF into y
+      if y > pTop and dy >= 0 then return true          -- above everything and still climbing
+      put pX + dx * tF into x
+      put pZ + dz * tF into z
+      put trunc(x / pCell + pCols / 2 + 1000) - 999 into c
+      put trunc(z / pCell + pRows / 2 + 1000) - 999 into r
+      if c < 1 or r < 1 or c > pCols or r > pRows then
+         if dy >= 0 then return true
+         next repeat
+      end if
+      repeat for each line tLine in pSolid[c, r]
+         if y < item 2 of tLine - 0.5 and y > item 1 of tLine + 0.5 then return false
+      end repeat
+   end repeat
+   return true
+end edClear
 
 -------------------------------------------------------------------- the card sends every click and move here
 
@@ -2577,7 +3001,9 @@ on Ed.AnyDown pButton
       Ed.BoardDown
    else if tName begins with "hs_" then
       Ed.HSwatch tName
-   else if Ed.MapCell() is not empty and (tName is "Map2D" or tName is "Ghost" or tName is "GhostBox") then
+   else if tName begins with "ss_" then
+      Ed.SSwatch tName
+   else if Ed.MapCell() is not empty and (tName is "Map2D" or tName is "Ghost" or tName is "GhostBox" or tName is "MarkBox") then
       Ed.MapDown pButton
    else if Ed.OverView() and (tName is "ViewBack" or tName begins with "v_") then
       if pButton is 3 then
@@ -2948,6 +3374,16 @@ end Ed.TestCamera
 function Ed.TestFont
    return sFont
 end Ed.TestFont
+
+-- the 3D preview's lines of one class: all (pVis false) or the visible pieces (tests)
+function Ed.TestSegs pClass, pVis
+   if pVis then return sVis[pClass]
+   return sSegs[pClass]
+end Ed.TestSegs
+
+function Ed.TestEye
+   return Ed.Eye()
+end Ed.TestEye
 
 function Ed.TestCell pWhich, pC, pR
    return sMap[pWhich][pR][pC]
