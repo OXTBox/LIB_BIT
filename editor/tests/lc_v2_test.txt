@@ -37,7 +37,7 @@ put empty into tWalks
 put the milliseconds into tT
 put 0 into tSteps
 repeat for each line tRun in "pool,12,13,-4,0,100,1" & return & "poolout,7,13,4,0,100,-59" & return & "dais,12,13,4,0,57,1" & return & "wall,22,10,4,0,60,1" & return & \
-    "towerwall,21,9,0,-4,80,1" & return & "door,20,9,0,-4,80,1" & return & "cloud,15,4,0,0,1,231" & return & "cloudoff,15,4,0,4,40,231" & return & "maze,2,6,4,0,200,1"
+    "towerwall,21,9,0,-4,80,1" & return & "door,20,9,0,-4,80,1" & return & "cloud,15,4,0,0,1,265" & return & "cloudoff,15,4,0,4,40,265" & return & "maze,2,6,4,0,200,1"
   put CellMap.CellX(tMap, item 2 of tRun) into x
   put CellMap.CellZ(tMap, item 3 of tRun) into z
   put item 7 of tRun * k into y

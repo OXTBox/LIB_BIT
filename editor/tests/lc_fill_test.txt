@@ -1,0 +1,80 @@
+-- Colour bands and From Floor / From Ceiling per cell (CELLMAP_V2.md section 3b), the xTalk
+-- library, with the same answers as Python (run tests/py_fill_test.py first: it writes
+-- tests/_fill/, a scratch folder).
+--   flock /tmp/oxt_headless.lock python3 -I OXT-BEYOND/tests/oxt_headless.py --engine both LIB_BIT/editor/tests/lc_fill_test.txt
+local tDir, tTags, tOld, tF, tC, tB, tMix, tOwn, tT, tText, tAll, tName, tSegs, tX, tZ, tY, tR, tWalks, k
+if there is a stack "lib_cellmap" then
+  stop using stack "lib_cellmap"
+  delete stack "lib_cellmap"
+end if
+put "/home/igame3d/projects/LIB_BIT/editor/" into tDir
+start using stack (tDir & "livecode/lib_cellmap.livecodescript")
+put CellMap.TagsFromText(CellMap.ReadText(tDir & "data/tags_default.txt")) into tTags
+put CellMap.ReadText(tDir & "tests/_fill/fill_off.cellmap") into tText
+put CellMap.FromText(tText) into tOld
+put ck("an old map reads and writes back the same", CellMap.ToText(tOld) is tText, true) & return after tLog
+put ck("the default top: the top of the blue band", CellMap.Top(tOld), 765) & return after tLog
+put ck("off: blue 10 floats at 500..520", CellMap.Column(tOld, 3, 2), "1,,,510,520") & return after tLog
+put ck("off: walk under it, stand on it", CellMap.Levels(tOld, 3, 2), "1,509" & return & "520,9999") & return after tLog
+put ck("off: green and blue float one above the other", CellMap.Column(tOld, 4, 2), "1,,,255,265,510,520") & return after tLog
+put ck("off: three levels in that cell", CellMap.Levels(tOld, 4, 2), "1,254" & return & "265,245" & return & "520,9999") & return after tLog
+put ck("off: a roof with a green block over it", CellMap.Levels(tOld, 5, 2), "1,99" & return & "100,155" & return & "265,9999") & return after tLog
+put CellMap.FromText(CellMap.ReadText(tDir & "tests/_fill/fill_floor.cellmap")) into tF
+put CellMap.FromText(CellMap.ReadText(tDir & "tests/_fill/fill_ceiling.cellmap")) into tC
+put CellMap.FromText(CellMap.ReadText(tDir & "tests/_fill/fill_both.cellmap")) into tB
+put CellMap.FromText(CellMap.ReadText(tDir & "tests/_fill/fill_mixed.cellmap")) into tMix
+put CellMap.FromText(CellMap.ReadText(tDir & "tests/_fill/fill_top600.cellmap")) into tOwn
+put ck("From Floor: one solid pillar up to the block top", CellMap.Column(tF, 3, 2), "520,,,,") & return after tLog
+put ck("From Floor: up to the highest block", CellMap.Column(tF, 4, 2), "520,,,,") & return after tLog
+put ck("From Floor: the room under the roof is filled too", CellMap.Column(tF, 5, 2), "265,,,,") & return after tLog
+put ck("From Floor: you stand only on top", CellMap.Levels(tF, 3, 2), "520,9999") & return after tLog
+put ck("From Ceiling: the block hangs from the map top", CellMap.Column(tC, 3, 2), "1,,,510,765") & return after tLog
+put ck("From Ceiling: down to the lowest block", CellMap.Column(tC, 4, 2), "1,,,255,765") & return after tLog
+put ck("From Ceiling: down to the roof when there is one", CellMap.Column(tC, 5, 2), "1,100,765,,") & return after tLog
+put ck("From Ceiling: still room under it", CellMap.Levels(tC, 3, 2), "1,509" & return & "765,9999") & return after tLog
+put ck("both: floor to top", item 1 of CellMap.Column(tB, 3, 2) & item 1 of CellMap.Column(tB, 4, 2) & item 1 of CellMap.Column(tB, 5, 2), "765765765") & return after tLog
+put ck("a map may name its own top", CellMap.Column(tOwn, 3, 2), "1,,,510,600") & return after tLog
+put ck("cells without blocks or roofs are not touched", CellMap.Column(tF, 1, 1) & CellMap.Column(tC, 1, 1) & CellMap.Column(tB, 1, 1), "1,,,,1,,,,1,,,,") & return after tLog
+put ck("cell by cell: one map, three kinds", CellMap.Column(tMix, 3, 2) & "|" & CellMap.Column(tMix, 4, 2) & "|" & CellMap.Column(tMix, 5, 2), "520,,,,|1,,,255,765|1,100,100,255,265") & return after tLog
+put ck("the [from] layer reads", tMix["from"][2][3] & tMix["from"][2][4] & tMix["from"][2][1], "120") & return after tLog
+put ck("saved: the same text as Python's", CellMap.ToText(tMix) is CellMap.ReadText(tDir & "tests/_fill/fill_mixed.cellmap"), true) & return after tLog
+-- the lines and the walk east along row 2, for all six, as Python
+put empty into tAll
+repeat for each item tName in "off,floor,ceiling,both,mixed,top600"
+  switch tName
+    case "off"
+      put tOld into tT
+      break
+    case "floor"
+      put tF into tT
+      break
+    case "ceiling"
+      put tC into tT
+      break
+    case "both"
+      put tB into tT
+      break
+    case "mixed"
+      put tMix into tT
+      break
+    case "top600"
+      put tOwn into tT
+      break
+  end switch
+  put CellMap.LevelSegments(tT, tTags, empty) into tSegs
+  put "==" && tName && the number of lines of tSegs & return & tSegs & return after tAll
+  put CellMap.CellX(tT, 1) into tX
+  put CellMap.CellZ(tT, 2) into tZ
+  put CellMap.HU(tT) into tY
+  repeat 100 times
+    put CellMap.Walk(tT, tTags, empty, tX, tZ, tY, 4, 0) into tR
+    put item 1 of tR into tX
+    put item 2 of tR into tZ
+    put item 3 of tR into tY
+  end repeat
+  put "walk" && item 1 of CellMap.CellAt(tT, tX, tZ) & return after tAll
+  put item 1 of CellMap.CellAt(tT, tX, tZ) & comma after tWalks
+end repeat
+put ck("walk east: under blocks, stopped by pillars and the tall block", tWalks, "5,2,5,2,2,5,") & return after tLog
+put ck("the six maps draw the same lines and walk the same as Python's", tAll is CellMap.ReadText(tDir & "tests/_fill/_py_fill_segments.txt"), true) & return after tLog
+return tLog

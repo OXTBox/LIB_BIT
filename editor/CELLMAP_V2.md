@@ -17,8 +17,9 @@ section 9. Version 1 is described in `README.md`; every v1 file still reads.
 | floor (grey) | 0-255 hu: where the ground is. 0 = empty space, 1 = a flat plane, 100 = a full wall |
 | ceiling (grey) | 0-255 hu: where the roof's underside is. 0 = no roof (open sky) |
 | red | 0-255 hu dug DOWN under the floor (a pit, a pool) |
-| green | 0-255 hu built UP above the grey (a thick roof, a tower) |
-| blue | 0-255 hu of open air above that, then a floating slab (a cloud, a bridge) |
+| green | 0-255: a block whose top is 255 + green hu (the green band, above the white). Since 18 Nov 2026, section 3b |
+| blue | 0-255: a block whose top is 510 + blue hu (the blue band, above the green) |
+| from | per cell: 1 From Floor (solid under its block), 2 From Ceiling (solid from the map's top down), 3 both. Section 3b |
 | link | a trigger cell pointing at target cells |
 | object | a thing standing in the map with a position and a facing |
 | stack | another map laid over this one at a base height |
@@ -65,8 +66,7 @@ The heroes are about 83 hu tall, so a standard hallway (100) is 20% taller than 
 - **red** digs down from the floor: the walking surface is `floor - red`. With a water tag
   (`w` shallow, `}` deep) the water's surface is drawn at the floor level and the actor wades
   or swims on the bottom; with no water tag it is a dry pit.
-- **ceiling** is the underside of a roof. A cell with ceiling at or below its ground is solid
-  to the roof (a wall inside a building).
+- **ceiling** is the underside of a roof.
 - **green** builds up: on top of the roof when there is one (a thick roof, a second storey's
   mass), otherwise on top of the floor (a wall or tower taller than the greys reach:
   floor 255 + green 255 = 510 hu, five hallways high).
@@ -79,6 +79,49 @@ Walking (the same rule in both engines, `CellMap.Walk`): every cell offers up to
 than `step` (30 hu: a 20 step with a raised glyph on it still passes) above y, with at least `head` (83 hu) of air above it; it may drop any
 distance. Then the tag speaks: effects `block` and `locked` stop it whatever the heights say; the
 others (`swim`, `damage`, `goal` ...) are handed to the game.
+
+### 3b. Colour bands and From Floor / From Ceiling, cell by cell (the owner, 2026-11-18)
+**This replaces the green and blue rules of the drawing above** (green is no longer a thick roof
+or a tower on the grey; blue is no longer measured from the column's top).
+
+The owner: "Green height should start at the height of White's highest. If White16 = 10 feet,
+then Green1 would be 10 feet, and Green16 would be 20 feet, and Blue would start at 20 feet and
+Blue16 would be 30 feet." And: "The height settings should have a From Floor toggle and From
+Ceiling toggle (both can be on or off) ... floating platforms, which may be desired, or not."
+And: "The extrusions should be cell by cell, that's what the whole height painting is for."
+
+**Bands.** White (the greys) is 0-255 hu. A **green** value g puts a block whose top is
+`255 + g` hu, `slab` (10) thick; a **blue** value b a block whose top is `510 + b`. One cell may
+hold both (green under blue). The grey ceiling is a thin roof at `ceiling` hu.
+
+**From, per cell** (the `[from]` layer, 0-3; left out of the file when every cell is 0):
+
+| from | What the cell does | Column (`CellMap.Column` / `column`) |
+|---|---|---|
+| 0 | both off: its blocks float, open air under them (every old map) | `ground,rb,rt,b1,t1[,b2,t2]` |
+| 1 From Floor | fills the cell solid under its block: one pillar from the ground up to its highest block's top | `top,,,,` |
+| 2 From Ceiling | solid from the **map's top** down to its roof (when it has a grey ceiling), else down to its lowest block | `ground,rb,top,,` or `ground,,,b1,top` |
+| 3 both | solid from the floor to the map's top | `top,,,,` |
+
+- A cell with no block (and, for From Ceiling, no roof) is not changed by its flags.
+- A block that touches what is under it (the ground, the roof, the green block) joins it.
+- **The map's top** is the map's own `top` (hu) when it names one, else **765**, the top of the
+  blue band (`CellMap.Top` / `map_top`, `kTop` / `TOP`). The BitEditor shows it in the Heights
+  tool row ("top 765"); a click there changes it (one undo).
+- Walking, levels, picks, drawn lines (`LevelSegments`: every block's edges and uprights, class
+  `sky`; a green pillar's sides class `green`), xt3d boxes and the checker all read the column.
+- The sample `wizard_pool` now builds its tower this way: walls green 200 From Floor (455),
+  rooms and the door roofed From Ceiling under `top 455`; the clouds are green 10 (top 265).
+- **A moving ceiling (doors now; later maybe transforming maps, elevators).** A From Ceiling cell
+  whose ceiling is brought down to its ground has no air left: it is solid from the map's top to the
+  floor. Raising the ceiling opens it again. LIB_EDITOR's E06 Rising Door and E07 Pad Opens Door work
+  this way (ceiling 1 = shut, 100 = open, `top 101` in `cards_yard`). The owner (19 Nov 2026): this
+  may matter for maps that change shape, and might serve for elevators; not designed yet.
+- Maps with green or blue made before 18 Nov change their look (green no longer stands on the
+  grey). Only test maps had any; `16x16_Cropped_wizard_pool` is one.
+- Tests: `tests/py_fill_test.py`, `tests/lc_fill_test.txt` (same columns, lines and walks in both
+  libraries), `tests/lc_heights_from_test.txt` (the editor: painting, undo, top, Extrude Glyphs,
+  save and open; run it in a copy, ISSUES 0007).
 
 ### Version 1 heights
 v1 had one number 0-35 where 9 was a full wall. Read as: 0 -> floor 1 (0 for the void tag
@@ -225,6 +268,14 @@ A **Heights** tab beside 1bit and Cells: the map's glyphs in two colours a cell.
 - The view always opens showing the glyphs (the owner, 2026-11-14: "so the user doesn't get lost
   between general design and detail design"). Blocks (squares instead of glyphs) is an optional
   button, never the default.
+- The tool row: Floor, Ceiling, Blocks, then **From Floor** and **From Ceiling** (section 3b),
+  the map's **top**, and **Extrude Glyphs**. A click on a From box turns it on or off and makes
+  the two boxes the brush: a click on a cell gives it what they say (one undo a stroke); a
+  swatch is the brush again. On the map a From Floor cell has an orange bar along its bottom, a
+  From Ceiling cell a sky-blue bar along its top; the hover line says FROM FLOOR / FROM CEILING.
+- **Extrude Glyphs** (Extrude Glyphs to Heights) is a second step, off while heights are
+  painted: on, a raised cell lifts its glyph's shape instead of the whole cell (the same as Mesh >
+  Extrude: Glyph Shape, section 4b; saved with the map).
 
 ## 9. Status (2026-11-14)
 | Part | State |

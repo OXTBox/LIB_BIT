@@ -41,7 +41,7 @@ check('levels: pool middle (bottom 60 under the floor)', cm.levels(m, 13, 6), [(
 check('levels: maze hallway (roof at 100, roof top walkable)', cm.levels(m, 1, 1), [(1, 99), (100, cm.NO_ROOF)])
 check('levels: tower wall 455', cm.levels(m, 2, 18), [(455, cm.NO_ROOF)])
 check('levels: tower room', cm.levels(m, 4, 19), [(1, 254), (455, cm.NO_ROOF)])
-check('levels: under a cloud', cm.levels(m, 3, 14), [(1, 220), (231, cm.NO_ROOF)])
+check('levels: under a cloud (green 10: 255-265)', cm.levels(m, 3, 14), [(1, 254), (265, cm.NO_ROOF)])
 
 k = cm.hu(m)
 def go(x, z, y, dx, dz, n):
@@ -62,7 +62,7 @@ check('walk: out of the pool again (steps of 20 are under the 30 limit)', run('p
 check('walk: onto the dais: ring 21 then top 41 (+6: standing on the X glyph), the goal', run('dais', 12, 13, 4, 0, 57, y=1 * k), (15, 13, 47, 'goal'))
 check('walk: the yard wall stops you', run('wall', 22, 10, 4, 0, 60, y=1 * k)[:3], (23, 10, 1))
 check('walk: the tower wall stops you, the door lets you in', (run('towerwall', 21, 9, 0, -4, 80, y=1 * k)[1], run('door', 20, 9, 0, -4, 80, y=1 * k)[:2]), (7, (20, 5)))
-check('walk: on the cloud, then off its edge and down', (run('cloud', 15, 4, 0, 0, 1, y=231 * k)[2], run('cloudoff', 15, 4, 0, 4, 40, y=231 * k)[2]), (231, 1))
+check('walk: on the cloud, then off its edge and down', (run('cloud', 15, 4, 0, 0, 1, y=265 * k)[2], run('cloudoff', 15, 4, 0, 4, 40, y=265 * k)[2]), (265, 1))
 check('walk: the maze hallway, roofed, out to the yard', run('maze', 2, 6, 4, 0, 200, y=1 * k)[1:3], (6, 1))
 gx = cm.cell_x(m, 11) + (5.5 - 8) / 16 * 76
 check('relief: the P of PROMPT is 6 hu proud where its bits are lit', (round(cm.ground_at(m, tags, font, gx, cm.cell_z(m, 6) + (1.5 - 8) / 16 * 76) / k),

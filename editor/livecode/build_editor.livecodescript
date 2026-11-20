@@ -29,12 +29,12 @@ command Build.Editor pDir
    set the resizable of stack tS to false
    set the defaultStack to tS
    Theme.MenuBar tS, 0, 0, kW, 30          -- menus sit on a light strip (the menu rule)
-   put "File" & tab & "New Map...|Open Map...|-|Save Map|Save Map As...|-|Save Font|Export Tags As Text" & return & \
+   put "File" & tab & "New Map...|Open Map...|-|Save Map|Save Map As...|-|Open Pack...|New Pack...|Pack Window|Check Map (E12)|-|Save Font|Export Tags As Text" & return & \
          "Edit" & tab & "Undo (Ctrl+Z)|Redo (Ctrl+Y)|-|Export Change History" & return & \
          "Bit" & tab & "Mirror H While Drawing|Mirror V While Drawing|Mirror H Now (left onto right)|Mirror V Now (top onto bottom)|-|Flip Horizontal|Flip Vertical|Rotate 90 cw|Rotate 90 ccw|-|Shift Left|Shift Right|Shift Up|Shift Down|-|Invert|Clear|Fill" & return & \
          "Grid" & tab & "Size (columns, rows)...|Cell Size (engine units)...|Wall Height (engine units)...|-|Font..." & return & \
          "Mesh" & tab & "Extrude: Whole Cell|Extrude: Glyph Shape|-|Height: Property Default|Height: Floor (1)|Height: Step (11)|Height: Block (33)|Height: Full Wall (100)" & return & \
-         "Scene" & tab & "Reset View|Top View (as the 2D map)|From The South|From The East|-|Zoom In|Zoom Out|-|Glyph Relief On / Off" & return & \
+         "Scene" & tab & "Reset View|Top View (as the 2D map)|From The South|From The East|-|Zoom In|Zoom Out|-|Glyph Relief On / Off|-|Hiding: Off|Hiding: Hidden Lines|-|Show: Floor|Show: Wall|Show: Pit|Show: Water|Show: Ceiling|Show: Green|Show: Sky|Show: Relief|Show: All" & return & \
          "Tiles" & tab & "Property Sets Height|Property Only (heights untouched)|-|Auto Walls|-|Property Colour..." & return & \
          "View" & tab & "Ghost: 100%|Ghost: 70%|Ghost: 40%|Ghost: Off" into tMenus
    put 8 into x
@@ -132,7 +132,7 @@ command Build.Editor pDir
    set the visible of group "GlyphImages" to false
 
    ---------------------------------------------------------------- middle: the 2D map, three views
-   Theme.TabStrip "Map", "1bit" & return & "Cells" & return & "Heights", 288, 34, 84, 25
+   Theme.TabStrip "Map", "1bit" & return & "Cells" & return & "Heights" & return & "Slope", 288, 34, 84, 25
    create graphic "MapFrame"
    set the style of it to "rectangle"
    set the filled of it to true
@@ -146,6 +146,7 @@ command Build.Editor pDir
    set the textSize of it to 10
    set the dontWrap of it to true
    Build.HeightTools
+   Build.SlopeTools
    create image "Map2D"
    set the rect of it to 296, 192, 312, 208
    create image "Ghost"
@@ -158,6 +159,13 @@ command Build.Editor pDir
    set the lineSize of it to 1
    set the foregroundColor of it to Theme.Get("accent")
    set the uThemeSkip of it to true
+   create graphic "MarkBox"                  -- the cell a checker line points at (pack window)
+   set the style of it to "rectangle"
+   set the filled of it to false
+   set the lineSize of it to 2
+   set the foregroundColor of it to "255,60,200"
+   set the uThemeSkip of it to true
+   set the visible of it to false
    set the visible of it to false
 
    ---------------------------------------------------------------- right: the 3D preview
@@ -197,7 +205,7 @@ command Build.Editor pDir
    set the lockText of it to true
    -- one look for everything (fields, buttons, menus by the menu rule), then templates reset
    Theme.ApplyStack tS
-   repeat for each item tItems in "FilterLabel,PaintInfo,HHint,ViewTitle"
+   repeat for each item tItems in "FilterLabel,PaintInfo,ViewTitle"
       set the opaque of field tItems of stack tS to false
       set the showBorder of field tItems of stack tS to false
    end repeat
@@ -220,6 +228,94 @@ command Build.Editor pDir
    return tPath
 end Build.Editor
 
+-- the Slope tab (cellmap v3, the owner's notes of 19 Nov 2026): which way is uphill (a compass, Auto in
+-- the middle), how a click paints (Ramp: drag a box, one smooth hill; One Cell; Flatten), Join (a ramp
+-- runs from the floor before it to the floor after it) and the rise swatches
+command Build.SlopeTools
+   local tDirs, i, tName, x, y, v, tShown, tValues
+   reset the templateGroup
+   create group "SlopeTools"
+   set the margins of group "SlopeTools" to 0
+   set the showBorder of group "SlopeTools" to false
+   set the backgroundColor of the templateButton to Theme.Get("panel")
+   set the foregroundColor of the templateButton to Theme.Get("text")
+   set the textSize of the templateButton to 10
+   put "NW,N,NE,W,Auto,E,SW,S,SE" into tDirs
+   repeat with i = 1 to 9
+      put item i of tDirs into tName
+      create button ("SDir" & tName) in group "SlopeTools"
+      set the label of it to tName
+      set the autoHilite of it to false
+      put 296 + ((i - 1) mod 3) * 34 into x
+      put 98 + ((i - 1) div 3) * 21 into y
+      set the rect of it to x, y, x + 32, y + 19
+      set the tooltip of it to "uphill:" && tName
+      set the script of it to "on mouseUp" & return & "Ed.SDir " & quote & toLower(tName) & quote & return & "end mouseUp"
+   end repeat
+   set the tooltip of button "SDirAuto" to "uphill from the way you drag (a click: the edge or corner nearest it)"
+   set the textSize of the templateButton to 11
+   put 404 into x
+   repeat for each item tName in "Ramp,One Cell,Flatten"
+      create button ("SMode" & word -1 of tName) in group "SlopeTools"   -- SModeRamp, SModeCell, SModeFlatten
+      set the label of it to tName
+      set the autoHilite of it to false
+      set the rect of it to x, 98, x + 70, 118
+      set the script of it to "on mouseUp" & return & "Ed.SMode " & quote & toLower(word -1 of tName) & quote & return & "end mouseUp"
+      add 74 to x
+   end repeat
+   set the tooltip of button "SModeRamp" to "Drag a box on the map: it becomes one smooth slope rising the compass way"
+   set the tooltip of button "SModeCell" to "Each cell on its own: lifts its uphill edge or corner (right-click copies a cell's slope)"
+   set the tooltip of button "SModeFlatten" to "Paint cells flat (their floor stays)"
+   set the style of the templateButton to "checkbox"
+   create button "SJoin" in group "SlopeTools"
+   set the label of it to "Join: from the floor before the box to the floor after it"
+   set the autoHilite of it to false
+   set the rect of it to 404, 122, 772, 140
+   set the tooltip of it to "On: a ramp starts at the floor just before the box and ends at the floor just after it (else it rises by the swatch)"
+   set the script of it to "on mouseUp" & return & "Ed.SJoin" & return & "end mouseUp"
+   reset the templateButton
+   reset the templateField
+   create field "SWords" in group "SlopeTools"
+   set the rect of it to 404, 141, 772, 160
+   set the lockText of it to true
+   set the textSize of it to 10
+   set the dontWrap of it to true
+   set the opaque of it to false
+   set the showBorder of it to false
+   put "0,1" into tValues
+   put 10 into v
+   repeat while v <= 250
+      put comma & v after tValues
+      add 10 to v
+   end repeat
+   put ",255" after tValues
+   reset the templateGraphic
+   set the style of the templateGraphic to "rectangle"
+   set the filled of the templateGraphic to true
+   set the lineSize of the templateGraphic to 1
+   set the foregroundColor of the templateGraphic to "70,70,78"
+   put 296 into x
+   repeat for each item v in tValues
+      put 0 into tShown
+      if v > 0 then put 40 + round(v * 215 / 255) into tShown
+      create graphic ("ss_" & v) in group "SlopeTools"
+      set the rect of it to x, 166, x + 17, 181
+      set the backgroundColor of it to tShown & comma & tShown & comma & tShown
+      set the uThemeSkip of it to true
+      set the tooltip of it to "rise" && v && "hu"
+      add 17 to x
+   end repeat
+   reset the templateGraphic
+   create graphic "SSel" in group "SlopeTools"
+   set the style of it to "rectangle"
+   set the filled of it to false
+   set the lineSize of it to 2
+   set the foregroundColor of it to Theme.Get("accent")
+   set the uThemeSkip of it to true
+   set the rect of it to 295, 165, 314, 182
+   set the visible of group "SlopeTools" to false
+end Build.SlopeTools
+
 -- Floor / Ceiling / Blocks buttons, a hint, four rows of swatches (grey, red, green, blue:
 -- 0, 1, 10, 20 ... 250, 255), the selection box; one group, shown with the Heights view
 command Build.HeightTools
@@ -233,18 +329,61 @@ command Build.HeightTools
       create button ("Tool" & tName) in group "HeightTools"
       set the label of it to tName
       set the autoHilite of it to false
-      set the rect of it to x, 98, x + 66, 118
+      if tName is "Ceiling" then
+         set the rect of it to x, 98, x + 56, 118
+         add 60 to x
+      else
+         set the rect of it to x, 98, x + 48, 118
+         add 52 to x
+      end if
       set the script of it to "on mouseUp" & return & "Ed.HTool " & quote & toLower(tName) & quote & return & "end mouseUp"
-      add 70 to x
    end repeat
-   set the tooltip of button "ToolFloor" to "Greys paint the floor; glyphs show the floor colour"
-   set the tooltip of button "ToolCeiling" to "Greys paint the ceiling; glyphs show the ceiling colour"
+   set the tooltip of button "ToolFloor" to "Greys paint the floor; glyphs show the floor colour on the ceiling colour"
+   set the tooltip of button "ToolCeiling" to "Greys paint the ceiling; glyphs show the ceiling colour on the floor colour"
    set the tooltip of button "ToolBlocks" to "Show squares instead of glyphs (the same two colours)"
-   create field "HHint" in group "HeightTools"
-   set the rect of it to 510, 99, 772, 118
+   -- From Floor / From Ceiling (the owner, 18 Nov 2026): painted cell by cell like a height. A click
+   -- on a box makes the two boxes the brush; a click on a cell gives it what the boxes say
+   -- (CELLMAP_V2.md 3b; the cell's [from] value: 1 From Floor + 2 From Ceiling)
+   set the backgroundColor of the templateButton to Theme.Get("panel")
+   set the foregroundColor of the templateButton to Theme.Get("text")
+   set the style of the templateButton to "checkbox"
+   put 462 into x
+   repeat for each item tName in "Floor,Ceiling"
+      create button ("HFrom" & tName) in group "HeightTools"
+      set the label of it to "From" && tName
+      set the autoHilite of it to false
+      if tName is "Ceiling" then
+         set the rect of it to x, 98, x + 92, 118
+      else
+         set the rect of it to x, 98, x + 84, 118
+      end if
+      set the script of it to "on mouseUp" & return & "Ed.HFrom " & quote & toLower(tName) & quote & return & "end mouseUp"
+      add 86 to x
+   end repeat
+   reset the templateButton
+   set the tooltip of button "HFromFloor" to "Paint it on cells: From Floor fills the cell solid under its block"
+   set the tooltip of button "HFromCeiling" to "Paint it on cells: the block hangs from the top of the map (a roof too)"
+   -- the map's top (where From Ceiling hangs from): shown, a click changes it
+   set the backgroundColor of the templateField to Theme.Get("panel")
+   set the foregroundColor of the templateField to Theme.Get("text")
+   create field "HTop" in group "HeightTools"
+   reset the templateField
+   set the rect of it to 642, 99, 692, 118
    set the lockText of it to true
    set the textSize of it to 10
    set the dontWrap of it to true
+   set the tooltip of it to "The top of the map in hu: From Ceiling hangs from here. Click to change it"
+   set the script of it to "on mouseUp" & return & "Ed.HTopAsk" & return & "end mouseUp"
+   -- Extrude Glyphs to Heights: a second step, off while you paint heights (the owner, 18 Nov 2026)
+   set the backgroundColor of the templateButton to Theme.Get("panel")
+   set the foregroundColor of the templateButton to Theme.Get("text")
+   create button "HExtrude" in group "HeightTools"
+   reset the templateButton
+   set the label of it to "Extrude Glyphs"
+   set the autoHilite of it to false
+   set the rect of it to 694, 98, 772, 118
+   set the tooltip of it to "Extrude Glyphs to Heights: a raised cell lifts its glyph's shape, not the whole cell (Mesh menu too; saved with the map)"
+   set the script of it to "on mouseUp" & return & "Ed.HExtrude" & return & "end mouseUp"
    put "0,1" into tValues
    put 10 into v
    repeat while v <= 250
@@ -283,7 +422,13 @@ command Build.HeightTools
          set the rect of it to x, y, x + 17, y + 15
          set the backgroundColor of it to tColour
          set the uThemeSkip of it to true
-         set the tooltip of it to tRow && v
+         if tRow is "green" and v > 0 then
+            set the tooltip of it to "green" && v & ": a block whose top is" && 255 + v && "hu"
+         else if tRow is "blue" and v > 0 then
+            set the tooltip of it to "blue" && v & ": a block whose top is" && 510 + v && "hu"
+         else
+            set the tooltip of it to tRow && v
+         end if
          add 17 to x
       end repeat
       add 16 to y

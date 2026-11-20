@@ -1,0 +1,76 @@
+-- the BitEditor's pack window (cellmap v3, CELLMAP_V3.md sections 4 and 6; A-92 4) and the E12
+-- checker's list. Rebuilds BitEditor.livecode and writes into maps/two_rooms: run it ONLY in a copy of
+-- the editor folder (ISSUES 0007), e.g.
+--   python3 -I tests/py_check_test.py   (writes tests/_check/)
+--   copy editor/ to SCRATCH/LIB_BIT/editor, link SCRATCH/LIB_THEME to the real LIB_THEME, then
+--   flock /tmp/oxt_headless.lock python3 -I OXT-BEYOND/tests/oxt_headless.py --root SCRATCH/LIB_BIT/editor --engine both tests/lc_pack_panel_test.txt
+local tD, tP, tText, tState, tWasPack
+repeat for each item tL in "lib_cellmap,build_editor,lib_bit,lib_theme,BitEditor,BitEditorPack"
+  if there is a stack tL then
+    if tL is not "BitEditor" and tL is not "BitEditorPack" then stop using stack tL
+    delete stack tL
+  end if
+end repeat
+put "/home/igame3d/projects/LIB_BIT/editor" into tD
+start using stack (tD & "/livecode/build_editor.livecodescript")
+Build.Editor tD
+put ck("built", the result ends with "BitEditor.livecode", true) & return after tLog
+send "Ed.Init" to stack "BitEditor"
+set the defaultStack to "BitEditor"
+put ck("the File menu has the pack items", the text of button "File" contains "Open Pack..." and the text of button "File" contains "Check Map (E12)", true) & return after tLog
+put tD & "/maps/two_rooms/two_rooms.cellpack" into tP
+put url ("binfile:" & tP) into tWasPack                  -- put back at the end
+send "Ed.OpenPack " & quote & tP & quote to stack "BitEditor"
+put ck("the pack window is there", there is a stack "BitEditorPack", true) & return after tLog
+put ck("its maps: cellar (painting) and loft", field "PackMaps" of stack "BitEditorPack", "* cellar" & tab & "main" & tab & "0" & tab & "1,1" & tab & "two_rooms_cellar.cellmap" & return & "loft" & tab & "main" & tab & "120" & tab & "1,1" & tab & "two_rooms_loft.cellmap") & return after tLog
+put ck("its two doors", the number of lines of field "PackDoors" of stack "BitEditorPack", 2) & return after tLog
+put ck("the start map is open for painting", value("Ed.PackState()", stack "BitEditor"), "two_rooms|2|1|cellar|false|2") & return after tLog
+-- double-click the loft: it opens
+set the hilitedLine of field "PackMaps" of stack "BitEditorPack" to 2
+send "Ed.PackDo Open" to stack "BitEditor"
+put ck("the loft opened", value("Ed.PackState()", stack "BitEditor") & "|" & (field "PackMaps" of stack "BitEditorPack" contains "* loft"), "two_rooms|2|2|loft|false|2|true") & return after tLog
+-- order, place, start, doors
+send "Ed.PackDo Up" to stack "BitEditor"
+put ck("Up: the loft first, the pack not saved", line 1 of field "PackMaps" of stack "BitEditorPack" begins with "* loft" and field "PackTitle" of stack "BitEditorPack" contains "[pack not saved]", true) & return after tLog
+send "Ed.PackDo Down" to stack "BitEditor"
+put ck("Down: back as it was", line 1 of field "PackMaps" of stack "BitEditorPack" begins with "cellar", true) & return after tLog
+send "Ed.PackPlace 2, " & quote & "main" & quote & ", 130, " & quote & "2,1" & quote to stack "BitEditor"
+put ck("Place: base 130 at 2,1", line 2 of field "PackMaps" of stack "BitEditorPack", "* loft" & tab & "main" & tab & "130" & tab & "2,1" & tab & "two_rooms_loft.cellmap") & return after tLog
+send "Ed.PackAddDoor " & quote & "loft:3,3" & quote & "," & quote & "stairs" & quote & "," & quote & "cellar:3,3" & quote & "," & quote & "a test door" & quote to stack "BitEditor"
+put ck("a door added", line 3 of field "PackDoors" of stack "BitEditorPack", "loft:3,3" & tab & "stairs" & tab & "cellar:3,3" & tab & "a test door") & return after tLog
+send "Ed.PackAddDoor " & quote & "attic:1,1" & quote & ",door," & quote & "cellar:3,3" & quote & ",x" to stack "BitEditor"
+put ck("a door from a map not in the pack is refused", the number of lines of field "PackDoors" of stack "BitEditorPack", 3) & return after tLog
+send "Ed.PackRemoveDoor 3" to stack "BitEditor"
+put ck("and removed", the number of lines of field "PackDoors" of stack "BitEditorPack", 2) & return after tLog
+-- the checker: the pack (with the open loft as it is in the editor)
+send "Ed.Check" to stack "BitEditor"
+put field "PackCheck" of stack "BitEditorPack" into tText
+put ck("Check on the pack fills the list (lines start with a kind)", tText is empty or (word 1 of line 1 of tText is not empty), true) & return after tLog
+-- saved: the file says what the window said
+send "Ed.PackPlace 2, " & quote & "main" & quote & ", 120, " & quote & "1,1" & quote to stack "BitEditor"
+send "Ed.PackDo Start" to stack "BitEditor"
+send "Ed.PackSave" to stack "BitEditor"
+put CellMap.ReadText(tP) into tText
+put ck("saved: start loft, both maps, two doors", tText contains ("start" & tab & "loft") and tText contains ("loft" & tab & "two_rooms_loft.cellmap" & tab & "main" & tab & "120" & tab & "1,1") and tText contains "[doors]", true) & return after tLog
+put ck("saved: the title no longer says not saved", field "PackTitle" of stack "BitEditorPack" contains "[pack not saved]", false) & return after tLog
+-- a map alone: Check lists its problems; a click on a line marks the cell
+send "Ed.OpenMap " & quote & tD & "/tests/_check/bad.cellmap" & quote to stack "BitEditor"
+put ck("a map outside the pack: painting none", item 4 of value("Ed.PackState()", stack "BitEditor") is empty and field "PackTitle" of stack "BitEditorPack" contains "outside the pack", true) & return after tLog
+send "Ed.Check" to stack "BitEditor"
+put field "PackCheck" of stack "BitEditorPack" into tText
+put ck("its problems are listed (a slope-trap among them)", tText contains "slope-trap" & tab & "bad" & tab & "4,2", true) & return after tLog
+set the itemDel to tab
+repeat with i = 1 to the number of lines of tText
+  if item 1 of line i of tText is "slope-roof" then exit repeat
+end repeat
+set the itemDel to comma
+send "Ed.CheckJump " & i to stack "BitEditor"
+put ck("a click on slope-roof 4,2 marks the cell", the visible of graphic "MarkBox" & "|" & (field "PaintInfo" contains "col 4 row 2"), "true|true") & return after tLog
+-- New Pack from the open map
+send "Ed.NewPack " & quote & "bad_pack" & quote to stack "BitEditor"
+put ck("New Pack: written beside the map, holding it, painting it", there is a file (tD & "/tests/_check/bad_pack.cellpack") & "|" & value("Ed.PackState()", stack "BitEditor"), "true|bad_pack|1|1|bad|false|0") & return after tLog
+delete file (tD & "/tests/_check/bad_pack.cellpack")
+put tWasPack into url ("binfile:" & tP)
+put ck("the pack window is freed when closed (destroyStack)", the destroyStack of stack "BitEditorPack", true) & return after tLog
+delete stack "BitEditorPack"         -- headless it was never opened, so close would not free it
+return tLog

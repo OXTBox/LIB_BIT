@@ -42,6 +42,24 @@ Version 1 files (below) still read; the BitEditor opens them as version 2 and sa
   starts again when a map is opened.
 - **Drawn tabs.** The native tab control is light grey on white whatever its colours, so the
   tabs are drawn: `Theme.TabStrip` in LIB_THEME (one locked field a tab).
+- **Colour bands, From Floor / From Ceiling cell by cell** (Heights tab; the owner's notes of
+  18 Nov 2026). Green starts where white ends: green g is a block whose top is 255 + g hu, blue b
+  one at 510 + b. Each cell can be **From Floor** (fills the cell solid under its block: a
+  pillar), **From Ceiling** (hangs from the top of the map, down to its roof or block), both
+  (solid floor to top) or neither (the block floats). Paint them like heights: click a box, then
+  cells. The top of the map is 765 hu unless the map names its own (click "top" to change it).
+  **Extrude Glyphs** lifts the glyph's shape instead of the whole cell, a second step after the
+  heights. `CELLMAP_V2.md` section 3b.
+- **Slope tab** (cellmap v3; 19 Nov 2026, the owner's notes): a compass picks which way is uphill
+  (Auto = the way you drag). **Ramp**: drag a box, it becomes one smooth slope (**Join**: from the
+  floor before the box to the floor after it); **One Cell**: lift a cell's uphill edge or corner by
+  the swatch (right-click copies a cell's slope); **Flatten**. Arrows point uphill, red = too steep.
+- **3D preview hiding** (Scene menu): Hiding: Hidden Lines (lines behind walls left out, worked out
+  when the view stops), Show: Floor / Wall / ... / Relief (switch one kind of line off), Show: All.
+- **Map packs** (File > Open Pack... / New Pack... / Pack Window / Check Map (E12); 19 Nov 2026): a
+  floating Pack window lists the level's maps (double-click paints one; Up / Down; Place...; Add...),
+  its doors (Door to... from the last cell clicked) and the checker's lines (a click frames the
+  cell). `CELLMAP_V3.md` sections 4, 6 and 8.
 - **Extrude: Glyph Shape** (Mesh menu; saved with the map as `extrude glyph`): a height raises
   the cell's glyph, not the whole cell. `CELLMAP_V2.md` section 4b.
 - **Painting in the 3D preview.** The left button paints there with the same brush as on the
