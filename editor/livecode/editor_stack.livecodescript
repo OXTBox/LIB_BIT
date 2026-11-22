@@ -2526,10 +2526,13 @@ on Ed.Build3D
    if sMap["floor"] is not an array then exit Ed.Build3D
    put empty into sSegs
    if sRelief3D or sMap["meta"]["extrude"] is "glyph" then put sFont into tFontUsed
-   put CellMap.LevelSegments(sMap, sTags, tFontUsed) into tSegs
-   -- the map's style: lean = only the outline you can see, straight runs joined, uprights at corners
-   -- (LIB_BIT/livecode/lib_lean.livecodescript; saved in the map as meta "style")
-   if sMap["meta"]["style"] is "lean" then put Lean.Segments(tSegs, empty) into tSegs
+   -- the map's style: lean = only the outline you can see, straight runs joined, uprights at corners,
+   -- the seams of roofs and blocks cut (LIB_BIT/livecode/lib_lean.livecodescript; saved as meta "style")
+   if sMap["meta"]["style"] is "lean" then
+      put Lean.MapSegments(sMap, sTags, tFontUsed, empty) into tSegs
+   else
+      put CellMap.LevelSegments(sMap, sTags, tFontUsed) into tSegs
+   end if
    put empty into sVis
    put the number of lines of tSegs into sSegCount
    repeat for each line tSeg in tSegs

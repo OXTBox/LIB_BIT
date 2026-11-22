@@ -34,6 +34,8 @@ wizard_pool 814 -> 310) in 10-17 ms.
 
 | Handler | Does |
 |---|---|
+| `Lean.MapSegments(map, tags, font, style)` | a cellmap's level, lean, with the seams of roofs and blocks cut (the BitEditor and E13 use this) |
+| `Lean.Seams(map)` | those seams: lines between two cells solid and open the same way above and below (22 Nov) |
 | `Lean.Segments(segs, style)` | any level's segments (`CellMap.LevelSegments` format) made lean |
 | `Lean.GridSegments(grid, style)` | a text grid (lines of characters, `#` solid) as lean segments |
 | `Lean.Walls(grid, cell, style)` | the same as ONE engine mesh (needs the engine's Mesh calls) |
@@ -44,7 +46,8 @@ Style keys: `drop` (classes whose flat lines go, default `floor`), `posts` (`cor
 (`plan` default / `front` as DotMazeLean). A map saved with meta `style lean` (BitEditor: Scene >
 Lean Style) asks to be drawn this way; E13 Walk The Map does (L switches it).
 Tests: `python3 -I tests/lean_tests.py` (16 checks, LIB_MCP standalone) and
-`editor/tests/lc_lean_test.txt` (the editor's menu, 11 checks, headless; run it in a copy).
+`editor/tests/lc_lean_test.txt` (the editor's menu, 11 checks, headless; run it in a copy) and
+`editor/tests/lc_lean_seams_test.txt` (the seams, 10 checks, headless, safe anywhere).
 
 ## Tests
 
