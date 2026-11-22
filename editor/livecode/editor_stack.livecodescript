@@ -85,6 +85,7 @@ on Ed.Init
    Ed.UseLib sDir & "/livecode/lib_cellmap.livecodescript"
    set the itemDel to "/"
    Ed.UseLib item 1 to -2 of sDir & "/livecode/lib_bit.livecodescript"
+   Ed.UseLib item 1 to -2 of sDir & "/livecode/lib_lean.livecodescript"     -- Lean style (Scene menu)
    set the itemDel to comma
    put "Glyphs" into sLeft
    put "1bit" into sTab
@@ -2526,6 +2527,9 @@ on Ed.Build3D
    put empty into sSegs
    if sRelief3D or sMap["meta"]["extrude"] is "glyph" then put sFont into tFontUsed
    put CellMap.LevelSegments(sMap, sTags, tFontUsed) into tSegs
+   -- the map's style: lean = only the outline you can see, straight runs joined, uprights at corners
+   -- (LIB_BIT/livecode/lib_lean.livecodescript; saved in the map as meta "style")
+   if sMap["meta"]["style"] is "lean" then put Lean.Segments(tSegs, empty) into tSegs
    put empty into sVis
    put the number of lines of tSegs into sSegCount
    repeat for each line tSeg in tSegs
@@ -2818,7 +2822,7 @@ on rawKeyDown pKey
 end rawKeyDown
 
 on Ed.SceneMenu pItem
-   local tC
+   local tC, tOld
    switch pItem
       case "Reset View"
          Ed.ResetCamera
@@ -2839,6 +2843,18 @@ on Ed.SceneMenu pItem
       case "Glyph Relief On / Off"
          put not sRelief3D into sRelief3D
          Ed.Build3D
+         break
+      case "Lean Style (outlines only)"
+         -- a style of the map: saved with it, so a game reading the map can draw it the same way
+         put sMap into tOld
+         if sMap["meta"]["style"] is "lean" then
+            delete variable sMap["meta"]["style"]
+         else
+            put "lean" into sMap["meta"]["style"]
+         end if
+         Ed.MapSnap "Lean Style", tOld
+         Ed.Build3D
+         Ed.SceneMarks
          break
       case "Hiding: Off"
          put "off" into sHide
@@ -2874,7 +2890,16 @@ end Ed.SceneMenu
 
 -- check marks on the Scene menu's Hiding and Show items
 on Ed.SceneMarks
-   local tC
+   local tC, tText
+   -- an editor built before 21 Nov 2026 has no Lean Style item yet: add it under Glyph Relief
+   if there is a button "Scene" then
+      put the text of button "Scene" into tText
+      if "Lean Style (outlines only)" is not in tText and "Glyph Relief On / Off" is in tText then
+         replace "Glyph Relief On / Off" with ("Glyph Relief On / Off" & return & "Lean Style (outlines only)") in tText
+         set the text of button "Scene" to tText
+      end if
+   end if
+   Ed.MenuMark "Scene", "Lean Style (outlines only)", (sMap["meta"]["style"] is "lean")
    Ed.MenuMark "Scene", "Hiding: Off", (sHide is not "lines")
    Ed.MenuMark "Scene", "Hiding: Hidden Lines", (sHide is "lines")
    repeat for each item tC in "Floor,Wall,Pit,Water,Ceiling,Green,Sky,Relief"
