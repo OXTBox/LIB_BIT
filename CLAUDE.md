@@ -1,6 +1,7 @@
 # LIB_BIT: notes for Claude Code
 
-Read `README.md`. Keep every handler pure: no globals, fields, images or screen updates.
+Read `README.md`. Keep every handler pure: no globals, fields, images or screen updates (one exception: `Lean.Walls`
+in lib_lean calls the engine's Mesh.New / AddVertex / AddLine).
 A grid is lines of "0"/"1"; handlers return grids without a trailing return.
 
 - Compile-check: `~/projects/LIB_MCP/tools/lcmcp compile livecode/lib_bit.livecodescript`

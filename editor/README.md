@@ -56,6 +56,9 @@ Version 1 files (below) still read; the BitEditor opens them as version 2 and sa
   the swatch (right-click copies a cell's slope); **Flatten**. Arrows point uphill, red = too steep.
 - **3D preview hiding** (Scene menu): Hiding: Hidden Lines (lines behind walls left out, worked out
   when the view stops), Show: Floor / Wall / ... / Relief (switch one kind of line off), Show: All.
+- **Lean Style** (Scene menu, 21 Nov 2026): the 3D preview keeps only the outline you can see (no
+  floor grid, no lines between cubes side by side, uprights only at corners); saved in the map as
+  meta `style lean`, so a game can draw it the same way (`LIB_BIT/livecode/lib_lean.livecodescript`).
 - **Map packs** (File > Open Pack... / New Pack... / Pack Window / Check Map (E12); 19 Nov 2026): a
   floating Pack window lists the level's maps (double-click paints one; Up / Down; Place...; Add...),
   its doors (Door to... from the last cell clicked) and the checker's lines (a click frames the

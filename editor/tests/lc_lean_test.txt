@@ -1,0 +1,45 @@
+-- the Scene menu's Lean Style (21 Nov 2026, LIB_BIT/livecode/lib_lean.livecodescript): the 3D preview
+-- keeps only the outline you can see; the map remembers it (meta "style lean") when saved.
+-- Rebuilds BitEditor.livecode: run it ONLY in a copy of the editor folder (ISSUES 0007):
+--   copy editor/ to SCRATCH/LIB_BIT/editor and livecode/ to SCRATCH/LIB_BIT/livecode, link
+--   SCRATCH/LIB_THEME to the real LIB_THEME, then
+--   python3 -I OXT-BEYOND/tests/oxt_headless.py --root SCRATCH/LIB_BIT/editor --engine both tests/lc_lean_test.txt
+local tD, tState, tMenu, tSaved
+repeat for each item tL in "lib_cellmap,build_editor,lib_bit,lib_lean,lib_theme,BitEditor"
+  if there is a stack tL then
+    if tL is not "BitEditor" then stop using stack tL
+    delete stack tL
+  end if
+end repeat
+put "/home/igame3d/projects/LIB_BIT/editor" into tD
+start using stack (tD & "/livecode/build_editor.livecodescript")
+Build.Editor tD
+put ck("built", the result ends with "BitEditor.livecode", true) & return after tLog
+send "Ed.Init" to stack "BitEditor"
+set the defaultStack to "BitEditor"
+put ck("the Scene menu has Lean Style", "Lean Style (outlines only)" is among the lines of the text of button "Scene", true) & return after tLog
+send "Ed.OpenMap " & quote & tD & "/maps/amazing_couple.cellmap" & quote to stack "BitEditor"
+send "Ed.Build3D" to stack "BitEditor"
+put value("Ed.State()", stack "BitEditor") into tState
+put ck("cube lines before", tState contains "|3d 480 lines|", true) & return after tLog
+send "Ed.SceneMenu " & quote & "Lean Style (outlines only)" & quote to stack "BitEditor"
+put value("Ed.State()", stack "BitEditor") into tState
+put ck("lean lines after", tState contains "|3d 182 lines|", true) & return after tLog
+put ck("the map is changed (not saved)", tState contains "|true,", true) & return after tLog
+put ck("the menu item is checked", "!cLean Style (outlines only)" is among the lines of the text of button "Scene", true) & return after tLog
+-- saved and read again: the style stays with the map
+send "Ed.SaveMap " & quote & tD & "/tests/_lean_saved.cellmap" & quote to stack "BitEditor"
+put url ("file:" & tD & "/tests/_lean_saved.cellmap") into tSaved
+put ck("saved with style lean", (("style" & tab & "lean") is among the lines of tSaved), true) & return after tLog
+send "Ed.OpenMap " & quote & tD & "/tests/_lean_saved.cellmap" & quote to stack "BitEditor"
+send "Ed.Build3D" to stack "BitEditor"
+put ck("opened again: still lean", value("Ed.State()", stack "BitEditor") contains "|3d 182 lines|", true) & return after tLog
+-- off again
+send "Ed.SceneMenu " & quote & "Lean Style (outlines only)" & quote to stack "BitEditor"
+put ck("off: the cube lines again", value("Ed.State()", stack "BitEditor") contains "|3d 480 lines|", true) & return after tLog
+put ck("the menu item is not checked", "Lean Style (outlines only)" is among the lines of the text of button "Scene", true) & return after tLog
+-- an editor stack built before the item existed gets it when it starts
+set the text of button "Scene" to "Reset View" & return & "Glyph Relief On / Off" & return & "-"
+send "Ed.SceneMarks" to stack "BitEditor"
+put ck("an old menu gets the item", line 3 of the text of button "Scene", "Lean Style (outlines only)") & return after tLog
+return tLog

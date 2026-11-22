@@ -24,6 +24,31 @@ set the text of image "sprite" to Bit.ToPBM(tGrid)      -- LiveCode displays PBM
 | `Bit.ToRows`, `Bit.FromRows(rows [, width])` | BitFontMaker2 rows: one number per row, column 1 = 1, column 2 = 2, column 3 = 4 ... |
 | `Bit.Maze(cols [, rows [, seed]])` | a perfect maze of cols x rows rooms as a (2c+1) x (2r+1) grid, `1` wall. Seeded with its own Park-Miller numbers, so a seed gives the same maze in every engine (and in Python) |
 
+## The Lean style: lib_lean (21 Nov 2026)
+
+`livecode/lib_lean.livecodescript` turns a rough level built of cubes into a clean line drawing,
+the way DotMazeLean's maze was made (`LIB_GAMES/Vibecode3D_Games/DotMaze/PERF.md`): only the
+edges you can see (solid meets open), straight runs joined, uprights only where the outline turns,
+all of it one drawing. On the BitEditor's maps it leaves 4 lines of 10 (amazing_couple 480 -> 182,
+wizard_pool 814 -> 310) in 10-17 ms.
+
+| Handler | Does |
+|---|---|
+| `Lean.MapSegments(map, tags, font, style)` | a cellmap's level, lean, with the seams of roofs and blocks cut (the BitEditor and E13 use this) |
+| `Lean.Seams(map)` | those seams: lines between two cells solid and open the same way above and below (22 Nov) |
+| `Lean.Segments(segs, style)` | any level's segments (`CellMap.LevelSegments` format) made lean |
+| `Lean.GridSegments(grid, style)` | a text grid (lines of characters, `#` solid) as lean segments |
+| `Lean.Walls(grid, cell, style)` | the same as ONE engine mesh (needs the engine's Mesh calls) |
+| `Lean.Style("posts=none\|layers=-20,20\|view=front")` | a style from text |
+
+Style keys: `drop` (classes whose flat lines go, default `floor`), `posts` (`corners` default /
+`all` / `none`), `solid` (default `#`), `layers` (outline heights in hu, default `0,100`), `view`
+(`plan` default / `front` as DotMazeLean). A map saved with meta `style lean` (BitEditor: Scene >
+Lean Style) asks to be drawn this way; E13 Walk The Map does (L switches it).
+Tests: `python3 -I tests/lean_tests.py` (16 checks, LIB_MCP standalone) and
+`editor/tests/lc_lean_test.txt` (the editor's menu, 11 checks, headless; run it in a copy) and
+`editor/tests/lc_lean_seams_test.txt` (the seams, 10 checks, headless, safe anywhere).
+
 ## Tests
 
 `python3 tests/run_tests.py` runs 28 checks inside real LiveCode 9.6.3 through

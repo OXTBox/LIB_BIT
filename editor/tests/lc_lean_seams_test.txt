@@ -1,0 +1,44 @@
+-- Lean's seams (22 Nov 2026, LIB_BIT/livecode/lib_lean.livecodescript): the grid between two cells
+-- with the same roof is cut, uprights with no line at either end go. Nothing is saved; safe anywhere:
+--   python3 -I OXT-BEYOND/tests/oxt_headless.py --engine both LIB_BIT/editor/tests/lc_lean_seams_test.txt
+local tD, tMap, c, tSegs, tStyle
+put "/home/igame3d/projects/LIB_BIT" into tD
+repeat for each item tL in "lib_cellmap,lib_lean"
+  if there is a stack tL then delete stack tL
+end repeat
+start using stack (tD & "/editor/livecode/lib_cellmap.livecodescript")
+start using stack (tD & "/livecode/lib_lean.livecodescript")
+-- three cells in a row on the ground (1 hu); the first two share a thin roof at 100
+put 3 into tMap["meta"]["cols"]
+put 1 into tMap["meta"]["rows"]
+put 2 into tMap["meta"]["version"]
+put 1 into c
+repeat while c <= 3
+  put 1 into tMap["floor"][1][c]
+  put 0 into tMap["ceiling"][1][c]
+  add 1 to c
+end repeat
+put 100 into tMap["ceiling"][1][1]
+put 100 into tMap["ceiling"][1][2]
+put Lean.Seams(tMap) into tSegs
+put ck("seams: the floor between all three, the roof between the first two", tSegs, "16,1,0,16,1,16,seam" & return & "16,100,0,16,100,16,seam" & return & "32,1,0,32,1,16,seam") & return after tLog
+put CellMap.LevelSegments(tMap, empty, empty) into tSegs
+put ck("cube view: the roof line between the first two", "16,100,0,16,100,16,ceiling" is among the lines of tSegs, true) & return after tLog
+put Lean.MapSegments(tMap, empty, empty, empty) into tSegs
+put ck("lean: that roof line is cut", "16,100,0,16,100,16,ceiling" is among the lines of tSegs, false) & return after tLog
+put ck("lean: the roof's own edge stays", "32,100,0,32,100,16,ceiling" is among the lines of tSegs, true) & return after tLog
+put ck("lean: the roof's north edge is one line", "0,100,0,32,100,0,ceiling" is among the lines of tSegs, true) & return after tLog
+-- a cut takes the middle out of a run
+put "16,0,0,32,0,0,seam" into tStyle["cut"]
+put ck("a cut splits a run", Lean.Segments("0,0,0,64,0,0,wall", tStyle), "0,0,0,16,0,0,wall" & return & "32,0,0,64,0,0,wall") & return after tLog
+put ck("water is never cut", Lean.Segments("0,0,0,64,0,0,water", tStyle), "0,0,0,64,0,0,water") & return after tLog
+-- an upright with nothing at either end is inside a block: it goes; a sloped line at its foot keeps it
+put ck("a bare upright goes", Lean.Segments("16,0,16,16,100,16,wall", empty), empty) & return after tLog
+put ck("an upright under a slope stays", "16,0,16,16,100,16,wall" is among the lines of Lean.Segments("16,0,16,16,100,16,wall" & return & "0,10,16,16,0,16,floor", empty), true) & return after tLog
+-- the default map: fewer lines than before the seams were cut (356)
+put CellMap.Read(tD & "/editor/maps/wizard_pool.cellmap") into tMap
+put the number of lines of Lean.MapSegments(tMap, CellMap.TagsFromText(CellMap.ReadText(tD & "/editor/data/tags_default.txt")), empty, empty) into tSegs
+put ck("wizard_pool lean lines", tSegs, 295) & return after tLog
+stop using stack "lib_lean"
+stop using stack "lib_cellmap"
+return tLog
