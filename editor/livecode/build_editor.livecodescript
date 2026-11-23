@@ -34,7 +34,7 @@ command Build.Editor pDir
          "Bit" & tab & "Mirror H While Drawing|Mirror V While Drawing|Mirror H Now (left onto right)|Mirror V Now (top onto bottom)|-|Flip Horizontal|Flip Vertical|Rotate 90 cw|Rotate 90 ccw|-|Shift Left|Shift Right|Shift Up|Shift Down|-|Invert|Clear|Fill" & return & \
          "Grid" & tab & "Size (columns, rows)...|Cell Size (engine units)...|Wall Height (engine units)...|-|Font..." & return & \
          "Mesh" & tab & "Extrude: Whole Cell|Extrude: Glyph Shape|-|Height: Property Default|Height: Floor (1)|Height: Step (11)|Height: Block (33)|Height: Full Wall (100)" & return & \
-         "Scene" & tab & "Reset View|Top View (as the 2D map)|From The South|From The East|-|Zoom In|Zoom Out|-|Glyph Relief On / Off|Lean Style (outlines only)|-|Hiding: Off|Hiding: Hidden Lines|-|Show: Floor|Show: Wall|Show: Pit|Show: Water|Show: Ceiling|Show: Green|Show: Sky|Show: Relief|Show: All" & return & \
+         "Scene" & tab & "Reset View|Top View (as the 2D map)|From The South|From The East|-|Zoom In|Zoom Out|-|Glyph Relief On / Off|Lean Style (outlines only)|Lean: Water Marks Off|-|Hiding: Off|Hiding: Hidden Lines|-|Show: Floor|Show: Wall|Show: Pit|Show: Water|Show: Ceiling|Show: Green|Show: Sky|Show: Relief|Show: All" & return & \
          "Tiles" & tab & "Property Sets Height|Property Only (heights untouched)|-|Auto Walls|-|Property Colour..." & return & \
          "View" & tab & "Ghost: 100%|Ghost: 70%|Ghost: 40%|Ghost: Off" into tMenus
    put 8 into x

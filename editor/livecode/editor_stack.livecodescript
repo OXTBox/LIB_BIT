@@ -2529,7 +2529,7 @@ on Ed.Build3D
    -- the map's style: lean = only the outline you can see, straight runs joined, uprights at corners,
    -- the seams of roofs and blocks cut (LIB_BIT/livecode/lib_lean.livecodescript; saved as meta "style")
    if sMap["meta"]["style"] is "lean" then
-      put Lean.MapSegments(sMap, sTags, tFontUsed, empty) into tSegs
+      put Lean.MapSegments(sMap, sTags, tFontUsed, Lean.Style(sMap["meta"]["lean"])) into tSegs   -- meta lean: "water=off"
    else
       put CellMap.LevelSegments(sMap, sTags, tFontUsed) into tSegs
    end if
@@ -2859,6 +2859,18 @@ on Ed.SceneMenu pItem
          Ed.Build3D
          Ed.SceneMarks
          break
+      case "Lean: Water Marks Off"
+         -- the lean style's water switch (lib_lean `water`): saved with the map as meta "lean"
+         put sMap into tOld
+         if sMap["meta"]["lean"] is "water=off" then
+            delete variable sMap["meta"]["lean"]
+         else
+            put "water=off" into sMap["meta"]["lean"]
+         end if
+         Ed.MapSnap "Lean Water Marks", tOld
+         Ed.Build3D
+         Ed.SceneMarks
+         break
       case "Hiding: Off"
          put "off" into sHide
          Ed.SceneMarks
@@ -2901,8 +2913,14 @@ on Ed.SceneMarks
          replace "Glyph Relief On / Off" with ("Glyph Relief On / Off" & return & "Lean Style (outlines only)") in tText
          set the text of button "Scene" to tText
       end if
+      -- and before 23 Nov 2026 no water switch under it
+      if "Lean: Water Marks Off" is not in tText and "Lean Style (outlines only)" is in tText then
+         replace "Lean Style (outlines only)" with ("Lean Style (outlines only)" & return & "Lean: Water Marks Off") in tText
+         set the text of button "Scene" to tText
+      end if
    end if
    Ed.MenuMark "Scene", "Lean Style (outlines only)", (sMap["meta"]["style"] is "lean")
+   Ed.MenuMark "Scene", "Lean: Water Marks Off", (sMap["meta"]["lean"] is "water=off")
    Ed.MenuMark "Scene", "Hiding: Off", (sHide is not "lines")
    Ed.MenuMark "Scene", "Hiding: Hidden Lines", (sHide is "lines")
    repeat for each item tC in "Floor,Wall,Pit,Water,Ceiling,Green,Sky,Relief"

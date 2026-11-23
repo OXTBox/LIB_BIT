@@ -28,6 +28,9 @@ script "lib_lean"
 ##   layers  the outline's heights in hu, comma separated (default 0,100: foot and top of the wall)
 ##   cut     lines to cut out of the flat lines of every class but water and relief (Lean.Seams' answer;
 ##           Lean.MapSegments fills it)
+##   water   marks (default): water keeps its diagonal mark in each cell | off: the marks go, the
+##           water's edges stay. A map keeps its lean style text in meta "lean" ("water=off"); the
+##           BitEditor (Scene > Lean: Water Marks Off) and E13 read it with Lean.Style.
 ##   view    Lean.Walls only: plan (default: rows run along z, layers are height, up is -y as in the
 ##           engine) | front (rows run down the screen, layers are depth z: DotMazeLean)
 ##
@@ -64,6 +67,8 @@ private function lnOpt pStyle, pKey
          return "0,100"
       case "view"
          return "plan"
+      case "water"
+         return "marks"
    end switch
    return empty
 end lnOpt
@@ -75,8 +80,9 @@ end lnOpt
 -- Sloped and diagonal lines pass through unchanged. The answer is sorted (the same input, the same text).
 function Lean.Segments pSegs, pStyle
    local tDrop, tPosts, tSeg, x1, y1, z1, x2, y2, z2, tClass, tRuns, tUps, tOther, tKey, tOut, tParts
-   local tRunList, tRun, a, b, tAt, tDirs, tUp, tLo, tHi, tWant, tCut, tEnds, tPiece, tCutKey
+   local tRunList, tRun, a, b, tAt, tDirs, tUp, tLo, tHi, tWant, tCut, tEnds, tPiece, tCutKey, tNoMarks
    put lnOpt(pStyle, "drop") into tDrop
+   put (lnOpt(pStyle, "water") is "off") into tNoMarks
    put lnOpt(pStyle, "posts") into tPosts
    set the itemDel to comma
    -- the cuts, keyed y|axis|fixed like the runs (any class)
@@ -112,6 +118,8 @@ function Lean.Segments pSegs, pStyle
          put z1 & return after tWant["z|" & min(y1, y2) & "|" & x1]
          put z1 & return after tWant["z|" & max(y1, y2) & "|" & x1]
       else
+         -- water's diagonal mark (flat, across the cell): gone with water=off
+         if tNoMarks and tClass is "water" and y1 = y2 then next repeat
          put tSeg & return after tOther
          -- a sloped line's ends: an upright standing there is not bare
          put true into tEnds[y1 & "|" & x1 & "|" & z1]

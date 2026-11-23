@@ -32,6 +32,10 @@ put ck("lean: the roof's north edge is one line", "0,100,0,32,100,0,ceiling" is 
 put "16,0,0,32,0,0,seam" into tStyle["cut"]
 put ck("a cut splits a run", Lean.Segments("0,0,0,64,0,0,wall", tStyle), "0,0,0,16,0,0,wall" & return & "32,0,0,64,0,0,wall") & return after tLog
 put ck("water is never cut", Lean.Segments("0,0,0,64,0,0,water", tStyle), "0,0,0,64,0,0,water") & return after tLog
+-- water=off (23 Nov): the water's diagonal mark goes, its edge stays; default keeps both
+put "0,1,0,16,1,16,water" & return & "0,1,0,16,1,0,water" into tSegs
+put ck("water marks kept by default", Lean.Segments(tSegs, empty), "0,1,0,16,1,0,water" & return & "0,1,0,16,1,16,water") & return after tLog
+put ck("water=off drops the mark only", Lean.Segments(tSegs, Lean.Style("water=off")), "0,1,0,16,1,0,water") & return after tLog
 -- an upright with nothing at either end is inside a block: it goes; a sloped line at its foot keeps it
 put ck("a bare upright goes", Lean.Segments("16,0,16,16,100,16,wall", empty), empty) & return after tLog
 put ck("an upright under a slope stays", "16,0,16,16,100,16,wall" is among the lines of Lean.Segments("16,0,16,16,100,16,wall" & return & "0,10,16,16,0,16,floor", empty), true) & return after tLog
@@ -39,6 +43,10 @@ put ck("an upright under a slope stays", "16,0,16,16,100,16,wall" is among the l
 put CellMap.Read(tD & "/editor/maps/wizard_pool.cellmap") into tMap
 put the number of lines of Lean.MapSegments(tMap, CellMap.TagsFromText(CellMap.ReadText(tD & "/editor/data/tags_default.txt")), empty, empty) into tSegs
 put ck("wizard_pool lean lines", tSegs, 295) & return after tLog
+put the number of lines of Lean.MapSegments(tMap, CellMap.TagsFromText(CellMap.ReadText(tD & "/editor/data/tags_default.txt")), empty, Lean.Style("water=off")) into tSegs
+put ck("wizard_pool lean, water=off: fewer lines", tSegs < 295, true) & return after tLog
+put ck("wizard_pool lean, water=off lines (42 marks gone)", tSegs, 253) & return after tLog
+
 stop using stack "lib_lean"
 stop using stack "lib_cellmap"
 return tLog
